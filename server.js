@@ -29,4 +29,4 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': mime });
     res.end(data);
   });
-}).listen(PORT, () => console.log(`Thea's Gymnastics: http://localhost:${PORT}`));
+}).listen(PORT, '0.0.0.0', () => console.log(`Thea's Gymnastics running on port ${PORT}`));
