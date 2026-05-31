@@ -177,6 +177,9 @@ async function getSessions() {
   return data.map(s => ({
     id: s.id, date: s.date, durationMins: s.duration_mins,
     focus: s.focus || [], flagged: s.flagged, notes: s.notes,
+    sessionTime: s.session_time || '',
+    photoUrls: s.photo_urls || [],
+    recurringGroup: s.recurring_group || '',
   }));
 }
 
@@ -184,12 +187,63 @@ async function saveSession(session) {
   const { error } = await db.from('training_sessions').upsert({
     id: session.id, date: session.date, duration_mins: session.durationMins,
     focus: session.focus || [], flagged: session.flagged || false, notes: session.notes || '',
+    session_time: session.sessionTime || '',
+    photo_urls: session.photoUrls || [],
+    recurring_group: session.recurringGroup || '',
   });
   if (error) console.error('saveSession:', error);
 }
 
 async function deleteSession(id) {
   await db.from('training_sessions').delete().eq('id', id);
+}
+
+async function deleteRecurringGroup(groupId) {
+  await db.from('training_sessions').delete().eq('recurring_group', groupId);
+}
+
+// Generate recurring sessions from a rule
+async function saveRecurringSessions(rule) {
+  // rule: { days: [0-6], startDate, endDate, durationMins, focus, flagged, sessionTime, notes }
+  const groupId = uid();
+  const start = new Date(rule.startDate + 'T12:00:00');
+  const end   = new Date(rule.endDate   + 'T12:00:00');
+  const sessions = [];
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    if (rule.days.includes(d.getDay())) {
+      sessions.push({
+        id: uid(),
+        date: d.toISOString().slice(0, 10),
+        durationMins: rule.durationMins,
+        focus: rule.focus,
+        flagged: rule.flagged,
+        notes: rule.notes,
+        sessionTime: rule.sessionTime,
+        photoUrls: [],
+        recurringGroup: groupId,
+      });
+    }
+  }
+
+  for (const s of sessions) await saveSession(s);
+  return sessions.length;
+}
+
+// Upload a photo to Supabase Storage, return public URL
+async function uploadSessionPhoto(sessionId, file) {
+  const ext  = file.name.split('.').pop();
+  const path = `${sessionId}/${uid()}.${ext}`;
+  const { error } = await db.storage.from('session-photos').upload(path, file, { upsert: true });
+  if (error) { console.error('uploadSessionPhoto:', error); return null; }
+  const { data } = db.storage.from('session-photos').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function deleteSessionPhoto(sessionId, url) {
+  // Extract path from URL
+  const path = url.split('/session-photos/')[1];
+  if (path) await db.storage.from('session-photos').remove([path]);
 }
 
 // ── Achievements ───────────────────────────
@@ -282,7 +336,8 @@ const Data = {
   init,
   getCompetitions, saveCompetition, deleteCompetition,
   getPersonalBests,
-  getSessions, saveSession, deleteSession,
+  getSessions, saveSession, deleteSession, deleteRecurringGroup,
+  saveRecurringSessions, uploadSessionPhoto, deleteSessionPhoto,
   getAchievements, markAchievementSeen,
   getWorldsState, saveWorldsState,
   getProfile, saveProfile,
