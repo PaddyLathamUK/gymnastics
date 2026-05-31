@@ -32,7 +32,12 @@ function allAroundScore(comp) {
 }
 
 // ── Active gymnast shortcut ─────────────────
-function gid() { return Auth.gymnast?.id || null; }
+// Checks for an open form's gymnast selector first, falls back to Auth.gymnast
+function gid() {
+  const formSel = document.getElementById('f-gymnast-id');
+  if (formSel?.value) return formSel.value;
+  return Auth.gymnast?.id || null;
+}
 
 // ── Init ───────────────────────────────────
 async function init() {

@@ -8,6 +8,12 @@ async function renderAdmin() {
   nav.innerHTML = `<button class="nav-back" onclick="closeAdmin()">‹ Back</button><div class="nav-title">Admin</div>`;
   view.appendChild(nav);
 
+  // DEBUG — remove once auth is confirmed working
+  const dbg = el('div', '');
+  dbg.style.cssText = 'padding:8px 16px;font-size:11px;color:var(--text-soft);background:var(--purple-bg);';
+  dbg.textContent = `Logged in as: ${Auth.user?.email || 'not logged in'} | role: ${Auth.role || 'none'} | gymnast: ${Auth.gymnast?.name || 'none'}`;
+  view.appendChild(dbg);
+
   const scroll = el('div', 'scroll-area');
   const content = el('div', 'scroll-content');
   scroll.appendChild(content);
@@ -31,36 +37,49 @@ async function renderAdmin() {
     content.appendChild(await buildGymnastLoginsCard());
   }
 
-  // ── Athlete Profile ──────────────────────
+  // ── Profile ──────────────────────────────
   const profileCard = el('div', 'card');
-  profileCard.innerHTML = `
-    <div class="admin-section-title">👤 Athlete Profile</div>
-    <div class="form-group" style="padding:0;margin-top:10px;">
-      <label class="form-label">Name</label>
-      <input class="form-input" id="adm-name" value="${profile.name}">
-    </div>
-    <div class="form-group" style="padding:0;margin-top:10px;">
-      <label class="form-label">Club</label>
-      <input class="form-input" id="adm-club" value="${profile.club}">
-    </div>
-    <div class="form-group" style="padding:0;margin-top:10px;">
-      <label class="form-label">USAIGC Level</label>
-      <select class="form-select" id="adm-usaigc">
-        ${['Copper 1','Copper 2','Silver 1','Silver 2','Gold 1'].map(l =>
-          `<option ${profile.usaigcLevel === l ? 'selected' : ''}>${l}</option>`
-        ).join('')}
-      </select>
-    </div>
-    <div class="form-group" style="padding:0;margin-top:10px;">
-      <label class="form-label">IGA UK Level</label>
-      <select class="form-select" id="adm-iga">
-        ${['Level 6','Level 7','Level 8','Level 9','Level 10'].map(l =>
-          `<option ${profile.igaLevel === l ? 'selected' : ''}>${l}</option>`
-        ).join('')}
-      </select>
-    </div>
-    <button class="btn-primary" style="margin-top:14px;" onclick="saveProfile()">Save Profile</button>
-  `;
+  if (Auth.isGymnast) {
+    // Gymnast sees full athletic profile
+    profileCard.innerHTML = `
+      <div class="admin-section-title">👤 My Profile</div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="adm-name" value="${profile.name}">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Club</label>
+        <input class="form-input" id="adm-club" value="${profile.club}">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">USAIGC Level</label>
+        <select class="form-select" id="adm-usaigc">
+          ${['Copper 1','Copper 2','Silver 1','Silver 2','Gold 1'].map(l =>
+            `<option ${profile.usaigcLevel === l ? 'selected' : ''}>${l}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">IGA UK Level</label>
+        <select class="form-select" id="adm-iga">
+          ${['Level 6','Level 7','Level 8','Level 9','Level 10'].map(l =>
+            `<option ${profile.igaLevel === l ? 'selected' : ''}>${l}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="saveProfile()">Save Profile</button>
+    `;
+  } else {
+    // Parent / admin sees just their name
+    profileCard.innerHTML = `
+      <div class="admin-section-title">👤 My Profile</div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="adm-fullname" value="${Auth.profile?.full_name || ''}">
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="saveUserProfile()">Save</button>
+    `;
+  }
   content.appendChild(profileCard);
 
   // ── Key Dates ────────────────────────────
@@ -141,6 +160,9 @@ async function renderAdmin() {
   sessCard.appendChild(addSessBtn);
   content.appendChild(sessCard);
 
+  // ── Migrate / Danger (admin only) ────────
+  if (!Auth.isAdmin) return; // parents don't need these sections
+
   // ── Migrate from localStorage ─────────────
   const migrateCard = el('div', 'card');
   migrateCard.innerHTML = `
@@ -197,6 +219,14 @@ async function saveProfile() {
     igaLevel:    document.getElementById('adm-iga')?.value || 'Level 8',
   });
   await renderDashboard();
+  showToast('Profile saved ✓');
+}
+
+async function saveUserProfile() {
+  const name = document.getElementById('adm-fullname')?.value?.trim();
+  if (!name) return;
+  await db.from('profiles').update({ full_name: name }).eq('id', Auth.user.id);
+  Auth.profile.full_name = name;
   showToast('Profile saved ✓');
 }
 
@@ -297,17 +327,25 @@ async function buildInvitesCard() {
   const btns = el('div', '');
   btns.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:14px;';
 
-  const parentBtn = el('button', 'btn-primary');
-  parentBtn.textContent = '＋ Invite a Parent';
-  parentBtn.onclick = () => showInviteForm('parent', card);
+  if (Auth.isAdmin) {
+    const parentBtn = el('button', 'btn-primary');
+    parentBtn.textContent = '＋ Invite a Parent';
+    parentBtn.onclick = () => showInviteForm('parent', card);
+    btns.appendChild(parentBtn);
+  }
+
+  const gymnastBtn = el('button', 'btn-primary');
+  gymnastBtn.style.background = 'linear-gradient(135deg,#34C97F 0%,#22a866 100%)';
+  gymnastBtn.textContent = '＋ Invite a Gymnast';
+  gymnastBtn.onclick = () => showInviteForm('gymnast', card);
+  btns.appendChild(gymnastBtn);
 
   const supporterBtn = el('button', 'btn-primary');
   supporterBtn.style.background = 'linear-gradient(135deg,var(--purple-mid) 0%,var(--purple) 100%)';
   supporterBtn.textContent = '＋ Invite a Supporter';
   supporterBtn.onclick = () => showInviteForm('supporter', card);
-
-  btns.appendChild(parentBtn);
   btns.appendChild(supporterBtn);
+
   card.appendChild(btns);
 
   return card;
@@ -317,17 +355,19 @@ function showInviteForm(type, card) {
   // Remove any existing form
   card.querySelector('.invite-form')?.remove();
 
-  const { data: gymnasts } = Auth;
   const form = el('div', 'invite-form');
   form.style.cssText = 'margin-top:12px;background:var(--purple-bg);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;';
 
-  const label = type === 'parent' ? 'Parent's name' : 'Supporter's name';
+  const label = type === 'parent'   ? 'Parent name'
+              : type === 'gymnast'  ? 'Gymnast name'
+              :                      'Supporter name';
 
+  // Gymnast and supporter invites need to be linked to a gymnast
   let gymSelect = '';
-  if (type === 'supporter' && Auth.gymnasts.length > 1) {
+  if ((type === 'gymnast' || type === 'supporter') && Auth.gymnasts.length > 0) {
     gymSelect = `
       <div>
-        <div class="form-label" style="margin-bottom:4px;">Gymnast</div>
+        <div class="form-label" style="margin-bottom:4px;">For gymnast</div>
         <select class="form-select" id="inv-gymnast">
           ${Auth.gymnasts.map(g => `<option value="${g.id}">${g.name}</option>`).join('')}
         </select>
@@ -360,6 +400,8 @@ async function generateInvite(type) {
     let invite;
     if (type === 'parent') {
       invite = await Auth.createParentInvite(name);
+    } else if (type === 'gymnast') {
+      invite = await Auth.createGymnastInvite(gymId, name);
     } else {
       invite = await Auth.createSupporterInvite(gymId ? [gymId] : [], name);
     }
@@ -403,6 +445,10 @@ async function buildGymnastLoginsCard() {
   }
 
   const { data: gymnasts } = await db.from('gymnasts').select('id, name, username, user_id').in('id', ids);
+  if (!gymnasts?.length) {
+    card.innerHTML += `<div style="font-size:13px;color:var(--text-soft);">No gymnasts found.</div>`;
+    return card;
+  }
 
   (gymnasts || []).forEach(g => {
     const hasLogin = !!g.user_id;
@@ -487,9 +533,15 @@ async function saveGymnastLogin(gymnastId, hasLogin) {
 }
 
 // ── Open / close admin ────────────────────
-function openAdmin() {
-  renderAdmin();
+async function openAdmin() {
   document.getElementById('view-admin').classList.add('active');
+  try {
+    await renderAdmin();
+  } catch(e) {
+    console.error('renderAdmin error:', e);
+    const view = document.getElementById('view-admin');
+    view.innerHTML += `<div style="padding:20px;color:var(--red);font-size:13px;">Error loading admin panel: ${e.message}</div>`;
+  }
 }
 
 function closeAdmin() {

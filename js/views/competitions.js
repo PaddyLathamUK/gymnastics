@@ -263,6 +263,7 @@ function buildCompForm(existingComp) {
   }).join('');
 
   return `
+    ${buildGymnastSelectorField(existingComp?.gymnast_id)}
     <div class="form-group">
       <label class="form-label">Competition Name</label>
       <input class="form-input" id="f-name" placeholder="e.g. Competition 3" value="${existingComp?.name || ''}">
@@ -342,6 +343,13 @@ async function saveComp(existingId) {
     notes:        document.getElementById('f-notes')?.value?.trim() || '',
     results,
   };
+
+  // Switch active gymnast to match the one chosen in the form
+  const formGid = document.getElementById('f-gymnast-id')?.value;
+  if (formGid && formGid !== Auth.gymnast?.id) {
+    Auth.selectGymnast(formGid);
+    buildGymnastSwitcher();
+  }
 
   await Data.saveCompetition(comp);
   closeSheet('sheet-comp');

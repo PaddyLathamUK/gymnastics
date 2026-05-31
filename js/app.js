@@ -132,6 +132,21 @@ async function selectGymnast(id) {
   await switchView(activeView);
 }
 
+// ── Gymnast selector for forms ──────────────
+// Returns a form-group HTML string with a gymnast dropdown,
+// but only when the user has more than one gymnast to choose from.
+function buildGymnastSelectorField(selectedId) {
+  if (Auth.gymnasts.length <= 1) return '';
+  const options = Auth.gymnasts.map(g =>
+    `<option value="${g.id}" ${g.id === (selectedId || Auth.gymnast?.id) ? 'selected' : ''}>${g.name}</option>`
+  ).join('');
+  return `
+    <div class="form-group">
+      <label class="form-label">👤 Gymnast</label>
+      <select class="form-select" id="f-gymnast-id">${options}</select>
+    </div>`;
+}
+
 // ── Role-gated write actions ────────────────
 function canWrite() { return Auth.canWrite; }
 

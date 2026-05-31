@@ -26,7 +26,7 @@ async function renderDashboard() {
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
       <div class="avatar">🤸</div>
-      <button class="gear-btn" onclick="openAdmin()" aria-label="Settings">⚙️</button>
+      ${!Auth.isSupporter ? `<button class="gear-btn" onclick="openAdmin()" aria-label="Settings">⚙️</button>` : ''}
     </div>
   `;
   view.appendChild(header);

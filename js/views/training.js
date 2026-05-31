@@ -274,6 +274,7 @@ function buildAddSessionForm() {
     </button>`).join('');
 
   return `
+    ${buildGymnastSelectorField()}
     <!-- Tab switcher -->
     <div class="session-tabs" id="session-tabs">
       <button class="session-tab active" onclick="switchSessionTab('single', this)">Single</button>
@@ -473,6 +474,13 @@ async function saveSessionWithId(existingId) {
     photoUrls,
     recurringGroup: '',
   });
+  // Switch active gymnast to match the one chosen in the form
+  const formGid = document.getElementById('f-gymnast-id')?.value;
+  if (formGid && formGid !== Auth.gymnast?.id) {
+    Auth.selectGymnast(formGid);
+    buildGymnastSwitcher();
+  }
+
   closeSheet('sheet-session');
   renderTraining();
 }
