@@ -21,10 +21,23 @@ const AuthView = {
   },
 
   // ── Login screen ───────────────────────────
+  _logoTaps: 0,
+  _logoTimer: null,
+
+  _onLogoTap() {
+    this._logoTaps++;
+    clearTimeout(this._logoTimer);
+    this._logoTimer = setTimeout(() => { this._logoTaps = 0; }, 3000);
+    if (this._logoTaps >= 10) {
+      this._logoTaps = 0;
+      this._showAdminSetup();
+    }
+  },
+
   _showLogin() {
     const body = document.getElementById('auth-body');
     body.innerHTML = `
-      <div class="auth-logo">🤸</div>
+      <div class="auth-logo" onclick="AuthView._onLogoTap()" style="cursor:default;user-select:none">🤸</div>
       <div class="auth-title">Thea's Gymnastics</div>
       <div class="auth-sub">Sign in to continue</div>
 
@@ -232,6 +245,67 @@ const AuthView = {
     } catch (e) {
       this._setError(e.message || 'Failed to create gymnast');
       btn.textContent = 'Save & Continue';
+      btn.disabled = false;
+    }
+  },
+
+  // ── Secret admin setup ─────────────────────
+  _showAdminSetup() {
+    const body = document.getElementById('auth-body');
+    body.innerHTML = `
+      <div class="auth-logo">🔐</div>
+      <div class="auth-title">Admin Setup</div>
+      <div class="auth-sub">One-time admin account creation</div>
+
+      <div class="auth-form">
+        <div class="auth-field">
+          <label>Email</label>
+          <input id="adm-email" type="email" placeholder="your@email.com" autocomplete="email">
+        </div>
+        <div class="auth-field">
+          <label>Password</label>
+          <input id="adm-password" type="password" placeholder="Choose a strong password" autocomplete="new-password">
+        </div>
+        <div id="auth-error" class="auth-error" style="display:none"></div>
+        <button class="auth-btn" id="auth-adm-btn" onclick="AuthView._doAdminSetup()">Create Admin Account</button>
+      </div>
+
+      <button class="auth-link" onclick="AuthView._showLogin()">Cancel</button>
+    `;
+    document.getElementById('adm-email').focus();
+  },
+
+  async _doAdminSetup() {
+    const email    = document.getElementById('adm-email').value.trim();
+    const password = document.getElementById('adm-password').value;
+    const btn      = document.getElementById('auth-adm-btn');
+    if (!email || !password) { this._setError('Please fill in all fields'); return; }
+    if (password.length < 8) { this._setError('Password must be at least 8 characters'); return; }
+    this._setError(null);
+    btn.textContent = 'Creating…';
+    btn.disabled = true;
+    try {
+      // Check no admin exists yet
+      const { data: existing } = await db.from('profiles')
+        .select('id').eq('role', 'admin').limit(1);
+      if (existing?.length) {
+        this._setError('An admin account already exists');
+        btn.textContent = 'Create Admin Account';
+        btn.disabled = false;
+        return;
+      }
+      const { data: authData, error: authError } = await db.auth.signUp({ email, password });
+      if (authError) throw authError;
+      const userId = authData.user.id;
+      const { error: profError } = await db.from('profiles')
+        .insert({ id: userId, full_name: 'Admin', role: 'admin' });
+      if (profError) throw profError;
+      await Auth.login(email, password);
+      this.hide();
+      appAfterAuth();
+    } catch (e) {
+      this._setError(e.message || 'Setup failed');
+      btn.textContent = 'Create Admin Account';
       btn.disabled = false;
     }
   },
