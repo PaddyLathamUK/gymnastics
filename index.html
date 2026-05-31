@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Thea 🤸">
+<meta name="theme-color" content="#EAE4FF">
+<title>Thea's Gymnastics</title>
+<link rel="stylesheet" href="css/design.css">
+</head>
+<body>
+
+<!-- ═══ APP SHELL ═══ -->
+<div id="app">
+
+  <!-- Status bar -->
+  <div id="status-bar">
+    <span class="time" id="status-time">9:41</span>
+    <div class="icons">
+      <span>●●●●</span>
+      <span>WiFi</span>
+      <span>🔋</span>
+    </div>
+  </div>
+
+  <!-- Screen -->
+  <div id="screen">
+
+    <!-- Dashboard -->
+    <div class="view active" id="view-home"></div>
+
+    <!-- Competitions -->
+    <div class="view" id="view-comps"></div>
+
+    <!-- Training -->
+    <div class="view" id="view-training"></div>
+
+    <!-- Worlds -->
+    <div class="view" id="view-worlds"></div>
+
+    <!-- Achievements -->
+    <div class="view" id="view-achievements"></div>
+
+    <!-- Admin (slides over everything, not a tab) -->
+    <div class="view admin-overlay" id="view-admin"></div>
+
+  </div><!-- /screen -->
+
+  <!-- Tab bar -->
+  <div id="tab-bar">
+    <div class="tab-item active" id="tab-home" onclick="switchView('home')">
+      <div class="tab-icon-wrap">🏠</div>
+      <div class="tab-lbl">Home</div>
+    </div>
+    <div class="tab-item" id="tab-comps" onclick="switchView('comps')">
+      <div class="tab-icon-wrap">📋</div>
+      <div class="tab-lbl">Results</div>
+    </div>
+    <div class="tab-item" id="tab-training" onclick="switchView('training')">
+      <div class="tab-icon-wrap">🤸</div>
+      <div class="tab-lbl">Training</div>
+    </div>
+    <div class="tab-item" id="tab-worlds" onclick="switchView('worlds')">
+      <div class="tab-icon-wrap">✈️</div>
+      <div class="tab-lbl">Worlds</div>
+    </div>
+    <div class="tab-item" id="tab-achievements" onclick="switchView('achievements')">
+      <div class="tab-icon-wrap">👑</div>
+      <div class="tab-lbl">Awards</div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ═══ SHEETS ═══ -->
+
+<!-- Add Competition Sheet -->
+<div class="sheet-overlay" id="sheet-comp" onclick="closeSheetOnBg(event,'sheet-comp')">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Add Competition</div>
+    <div class="sheet-body"></div>
+  </div>
+</div>
+
+<!-- Add Session Sheet -->
+<div class="sheet-overlay" id="sheet-session" onclick="closeSheetOnBg(event,'sheet-session')">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Log Training Session</div>
+    <div class="sheet-body"></div>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+<script src="js/views/dashboard.js"></script>
+<script src="js/views/competitions.js"></script>
+<script src="js/views/training.js"></script>
+<script src="js/views/worlds.js"></script>
+<script src="js/views/achievements.js"></script>
+<script src="js/views/admin.js"></script>
+<script>
+  function closeSheetOnBg(e, id) {
+    if (e.target === e.currentTarget) closeSheet(id);
+  }
+  appInit();
+</script>
+</body>
+</html>

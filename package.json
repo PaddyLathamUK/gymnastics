@@ -1,0 +1,12 @@
+{
+  "name": "thea-gymnastics",
+  "version": "1.0.0",
+  "description": "Thea Latham's personal gymnastics tracker",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
