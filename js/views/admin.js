@@ -20,6 +20,12 @@ async function renderAdmin() {
     Data.getSessions(),
   ]);
 
+  // ── Users (admin only) ───────────────────
+  if (Auth.isAdmin) {
+    content.appendChild(await buildUsersCard());
+    content.appendChild(await buildInvitesCard());
+  }
+
   // ── Athlete Profile ──────────────────────
   const profileCard = el('div', 'card');
   profileCard.innerHTML = `
@@ -198,6 +204,182 @@ async function saveDates() {
   });
   await renderDashboard();
   showToast('Dates saved ✓');
+}
+
+// ── Users card ───────────────────────────
+async function buildUsersCard() {
+  const card = el('div', 'card');
+  card.innerHTML = `<div class="admin-section-title">👥 Users</div>`;
+
+  const { data: profiles } = await db.from('profiles')
+    .select('id, full_name, role')
+    .order('role');
+
+  const { data: pgLinks } = await db.from('parent_gymnast')
+    .select('parent_id, gymnasts(name)');
+
+  const { data: sgLinks } = await db.from('gymnast_supporters')
+    .select('supporter_id, gymnasts(name)');
+
+  if (!profiles?.length) {
+    card.innerHTML += `<div style="font-size:13px;color:var(--text-soft);margin-top:10px;">No users yet.</div>`;
+    return card;
+  }
+
+  const roleIcon = { admin: '🔐', parent: '👨‍👧', gymnast: '🤸', supporter: '👏' };
+
+  profiles.forEach(p => {
+    const linked = p.role === 'parent'
+      ? (pgLinks || []).filter(l => l.parent_id === p.id).map(l => l.gymnasts?.name).filter(Boolean)
+      : p.role === 'supporter'
+      ? (sgLinks || []).filter(l => l.supporter_id === p.id).map(l => l.gymnasts?.name).filter(Boolean)
+      : [];
+
+    const row = el('div', 'admin-row');
+    row.innerHTML = `
+      <div class="admin-row-info">
+        <div class="admin-row-title">${roleIcon[p.role] || '👤'} ${p.full_name}</div>
+        <div class="admin-row-sub">${p.role}${linked.length ? ' · ' + linked.join(', ') : ''}</div>
+      </div>
+    `;
+    card.appendChild(row);
+  });
+
+  return card;
+}
+
+// ── Invites card ─────────────────────────
+async function buildInvitesCard() {
+  const card = el('div', 'card');
+  card.id = 'invites-card';
+  card.innerHTML = `<div class="admin-section-title">✉️ Invites</div>`;
+
+  // Pending invites list
+  const { data: pending } = await db.from('invite_links')
+    .select('*')
+    .is('used_at', null)
+    .gte('expires_at', new Date().toISOString())
+    .order('expires_at', { ascending: true });
+
+  if (pending?.length) {
+    const pendingWrap = el('div', '');
+    pendingWrap.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:8px;';
+    pending.forEach(inv => {
+      const typeLabel = inv.invite_type === 'parent' ? '👨‍👧 Parent'
+                      : inv.invite_type === 'gymnast' ? '🤸 Gymnast'
+                      : '👏 Supporter';
+      const expires = new Date(inv.expires_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+      const url = Auth.inviteUrl(inv.token);
+      const row = el('div', 'invite-row');
+      row.innerHTML = `
+        <div class="invite-row-info">
+          <div class="invite-name">${inv.invitee_name || 'Unnamed'} <span class="invite-type-pill">${typeLabel}</span></div>
+          <div class="invite-expires">Expires ${expires}</div>
+        </div>
+        <button class="admin-btn edit" onclick="copyInvite('${url}', this)">Copy</button>
+      `;
+      pendingWrap.appendChild(row);
+    });
+    card.appendChild(pendingWrap);
+  } else {
+    const none = el('div', '');
+    none.style.cssText = 'font-size:13px;color:var(--text-soft);margin-top:8px;margin-bottom:4px;';
+    none.textContent = 'No pending invites.';
+    card.appendChild(none);
+  }
+
+  // Generate invite buttons
+  const btns = el('div', '');
+  btns.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:14px;';
+
+  const parentBtn = el('button', 'btn-primary');
+  parentBtn.textContent = '＋ Invite a Parent';
+  parentBtn.onclick = () => showInviteForm('parent', card);
+
+  const supporterBtn = el('button', 'btn-primary');
+  supporterBtn.style.background = 'linear-gradient(135deg,var(--purple-mid) 0%,var(--purple) 100%)';
+  supporterBtn.textContent = '＋ Invite a Supporter';
+  supporterBtn.onclick = () => showInviteForm('supporter', card);
+
+  btns.appendChild(parentBtn);
+  btns.appendChild(supporterBtn);
+  card.appendChild(btns);
+
+  return card;
+}
+
+function showInviteForm(type, card) {
+  // Remove any existing form
+  card.querySelector('.invite-form')?.remove();
+
+  const { data: gymnasts } = Auth;
+  const form = el('div', 'invite-form');
+  form.style.cssText = 'margin-top:12px;background:var(--purple-bg);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;';
+
+  const label = type === 'parent' ? 'Parent's name' : 'Supporter's name';
+
+  let gymSelect = '';
+  if (type === 'supporter' && Auth.gymnasts.length > 1) {
+    gymSelect = `
+      <div>
+        <div class="form-label" style="margin-bottom:4px;">Gymnast</div>
+        <select class="form-select" id="inv-gymnast">
+          ${Auth.gymnasts.map(g => `<option value="${g.id}">${g.name}</option>`).join('')}
+        </select>
+      </div>`;
+  }
+
+  form.innerHTML = `
+    <div>
+      <div class="form-label" style="margin-bottom:4px;">${label}</div>
+      <input class="form-input" id="inv-name" placeholder="e.g. Sarah Jones" style="background:white;">
+    </div>
+    ${gymSelect}
+    <div style="display:flex;gap:8px;">
+      <button class="btn-primary" style="flex:1;" onclick="generateInvite('${type}')">Generate Link</button>
+      <button class="btn-cancel" style="flex:0 0 auto;padding:0 14px;" onclick="this.closest('.invite-form').remove()">✕</button>
+    </div>
+    <div id="inv-result" style="display:none;word-break:break-all;font-size:12px;color:var(--text-mid);background:white;border-radius:10px;padding:10px;"></div>
+  `;
+  card.appendChild(form);
+  card.querySelector('#inv-name').focus();
+}
+
+async function generateInvite(type) {
+  const name   = document.getElementById('inv-name')?.value.trim();
+  const gymEl  = document.getElementById('inv-gymnast');
+  const gymId  = gymEl ? gymEl.value : Auth.gymnast?.id;
+  if (!name) { showToast('Please enter a name'); return; }
+
+  try {
+    let invite;
+    if (type === 'parent') {
+      invite = await Auth.createParentInvite(name);
+    } else {
+      invite = await Auth.createSupporterInvite(gymId ? [gymId] : [], name);
+    }
+    const url = Auth.inviteUrl(invite.token);
+    const result = document.getElementById('inv-result');
+    result.style.display = 'block';
+    result.innerHTML = `<strong>Link ready!</strong><br>${url}<br>
+      <button class="admin-btn edit" style="margin-top:8px;width:100%;" onclick="copyInvite('${url}', this)">Copy Link</button>`;
+    showToast('Invite created ✓');
+    // Refresh the invites card
+    setTimeout(() => renderAdmin(), 300);
+  } catch(e) {
+    showToast('Failed: ' + e.message);
+  }
+}
+
+async function copyInvite(url, btn) {
+  try {
+    await navigator.clipboard.writeText(url);
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  } catch {
+    prompt('Copy this link:', url);
+  }
 }
 
 // ── Open / close admin ────────────────────

@@ -1006,6 +1006,25 @@ body {
   color: var(--white);
 }
 
+/* ── Invite rows ── */
+.invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--purple-bg);
+}
+.invite-row:last-child { border-bottom: none; }
+.invite-row-info { flex: 1; min-width: 0; }
+.invite-name { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.invite-expires { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+.invite-type-pill {
+  font-size: 11px; font-weight: 600; padding: 2px 8px;
+  background: var(--purple-bg); color: var(--purple);
+  border-radius: 20px;
+}
+
 /* ── Dashboard athlete header ── */
 .dash-header {
   padding: 14px 20px 4px;
