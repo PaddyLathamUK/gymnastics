@@ -1,7 +1,7 @@
 /* ── Achievements View ── */
 
-function renderAchievements() {
-  const achievements = Data.getAchievements();
+async function renderAchievements() {
+  const achievements = await Data.getAchievements();
   const view = document.getElementById('view-achievements');
   view.innerHTML = '';
 
@@ -14,7 +14,6 @@ function renderAchievements() {
   scroll.appendChild(content);
   view.appendChild(scroll);
 
-  // Summary strip
   const pbs    = achievements.filter(a => a.kind === 'pb').length;
   const medals = achievements.filter(a => a.kind === 'medal').length;
   const pods   = achievements.filter(a => a.kind === 'podium').length;
@@ -37,13 +36,13 @@ function renderAchievements() {
   for (const a of achievements) {
     const card = el('div', 'achieve-card');
     if (a.isNew) {
-      setTimeout(() => {
-        Data.markAchievementSeen(a.id);
+      setTimeout(async () => {
+        await Data.markAchievementSeen(a.id);
         card.querySelector('.new-badge')?.remove();
       }, 2000);
     }
     card.innerHTML = `
-      <div class="achieve-icon ${achieveIconClass(a.kind)}">${achieveEmoji(a.kind)}</div>
+      <div class="achieve-icon ${a.kind === 'pb' ? 'ai-purple' : 'ai-gold'}">${achieveEmoji(a.kind)}</div>
       <div class="achieve-body">
         <div class="a-title">
           ${a.title}
@@ -55,10 +54,6 @@ function renderAchievements() {
     `;
     content.appendChild(card);
   }
-}
-
-function achieveIconClass(kind) {
-  return kind === 'pb' ? 'ai-purple' : 'ai-gold';
 }
 
 function achieveEmoji(kind) {

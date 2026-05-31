@@ -71,11 +71,25 @@ function updateClock() {
   if (el) el.textContent = t;
 }
 
+// ── Loading overlay ────────────────────────
+function showLoading(viewId) {
+  const view = document.getElementById(viewId);
+  if (!view) return;
+  const existing = view.querySelector('.loading-overlay');
+  if (existing) return;
+  const ov = el('div', 'loading-overlay');
+  ov.innerHTML = `<div class="loading-spinner">✦</div>`;
+  view.appendChild(ov);
+}
+function hideLoading(viewId) {
+  document.getElementById(viewId)?.querySelector('.loading-overlay')?.remove();
+}
+
 // ── Tab routing ────────────────────────────
 const VIEWS = ['home', 'comps', 'training', 'worlds', 'achievements'];
 let activeView = 'home';
 
-function switchView(name) {
+async function switchView(name) {
   if (!VIEWS.includes(name)) return;
   activeView = name;
 
@@ -91,7 +105,7 @@ function switchView(name) {
     worlds:       renderWorlds,
     achievements: renderAchievements,
   };
-  renderers[name]?.();
+  await renderers[name]?.();
 }
 
 // ── Sheet helpers ──────────────────────────
@@ -100,11 +114,13 @@ function closeSheet(id) {
 }
 
 // ── Init ───────────────────────────────────
-function appInit() {
-  Data.init();
+async function appInit() {
+  showLoading('view-home');
+  await Data.init();
+  hideLoading('view-home');
   updateClock();
   setInterval(updateClock, 10000);
   setInterval(tickCountdowns, 1000);
-  switchView('home');
+  await switchView('home');
   tickCountdowns();
 }

@@ -716,6 +716,21 @@ body {
   box-shadow: 0 4px 12px rgba(123,95,255,0.3);
 }
 
+/* ── Loading overlay ── */
+.loading-overlay {
+  position: absolute; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+.loading-spinner {
+  font-size: 32px; color: var(--purple);
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* ── Admin overlay ── */
 .admin-overlay {
   background: var(--bg);

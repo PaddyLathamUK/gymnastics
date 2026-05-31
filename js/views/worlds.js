@@ -1,9 +1,11 @@
 /* ── Worlds View ── */
 
-function renderWorlds() {
-  const state = Data.getWorldsState();
-  const pbs   = Data.getPersonalBests();
-  const view  = document.getElementById('view-worlds');
+async function renderWorlds() {
+  const [state, pbs] = await Promise.all([
+    Data.getWorldsState(),
+    Data.getPersonalBests(),
+  ]);
+  const view = document.getElementById('view-worlds');
   view.innerHTML = '';
 
   const nav = el('div', 'nav-bar');
@@ -15,7 +17,7 @@ function renderWorlds() {
   scroll.appendChild(content);
   view.appendChild(scroll);
 
-  // Hero card
+  // Hero
   const hero = el('div', 'worlds-hero');
   hero.innerHTML = `
     <div class="wh-top">
@@ -33,13 +35,11 @@ function renderWorlds() {
   `;
   content.appendChild(hero);
 
-  // Countdown
   content.appendChild(buildCountdown());
 
   // Upgrade toggles
   const upgradeCard = el('div', 'card');
   upgradeCard.innerHTML = `<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:4px;">⭐ Upgrade Targets</div>`;
-
   for (const app of Data.UPGRADE_TARGETS) {
     const key = app.toLowerCase();
     const achieved = state[key] || false;
@@ -63,7 +63,6 @@ function renderWorlds() {
     if (state.vault) achieved.push('Vault');
     if (state.beam)  achieved.push('Beam');
     const cel = el('div', 'celebration-card');
-    cel.id = 'celebration';
     cel.innerHTML = `
       <div style="font-size:44px;">🌟</div>
       <div class="c-title">UPGRADE ACHIEVED!</div>
@@ -73,32 +72,24 @@ function renderWorlds() {
     content.appendChild(cel);
   }
 
-  // Live score entry button
+  // Live entry button
   const entryCard = el('div', 'card');
   entryCard.innerHTML = `
     <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:6px;">✏️ Live Score Entry</div>
-    <div style="font-size:13px;color:var(--text-soft);margin-bottom:14px;">
-      Enter scores in real time at the event as each apparatus is completed.
-    </div>
+    <div style="font-size:13px;color:var(--text-soft);margin-bottom:14px;">Enter scores in real time at the event.</div>
   `;
   const entryBtn = el('button', 'btn-primary');
   entryBtn.innerHTML = '＋ Enter Worlds Scores';
-  entryBtn.onclick = () => {
-    switchView('comps');
-    setTimeout(openAddComp, 100);
-  };
+  entryBtn.onclick = () => { switchView('comps'); setTimeout(openAddComp, 100); };
   entryCard.appendChild(entryBtn);
   content.appendChild(entryCard);
 }
 
-function toggleUpgrade(key) {
-  const state = Data.getWorldsState();
+async function toggleUpgrade(key) {
+  const state = await Data.getWorldsState();
   state[key] = !state[key];
-  Data.saveWorldsState(state);
-  if (state[key]) {
-    // Trigger haptic-like feedback via a brief vibration if supported
-    if (navigator.vibrate) navigator.vibrate([50, 30, 80]);
-  }
+  await Data.saveWorldsState(state);
+  if (state[key] && navigator.vibrate) navigator.vibrate([50, 30, 80]);
   renderWorlds();
 }
 

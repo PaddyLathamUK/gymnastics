@@ -1,14 +1,16 @@
 /* ── Dashboard View ── */
 
-function renderDashboard() {
-  const comps   = Data.getCompetitions();
-  const pbs     = Data.getPersonalBests();
-  const latest  = comps[0];
-  const profile = Data.getProfile();
-  const dates   = Data.getDates();
-
+async function renderDashboard() {
   const view = document.getElementById('view-home');
   view.innerHTML = '';
+
+  const [comps, pbs, profile, dates] = await Promise.all([
+    Data.getCompetitions(),
+    Data.getPersonalBests(),
+    Data.getProfile(),
+    Data.getDates(),
+  ]);
+  const latest = comps[0];
 
   // Athlete header
   const header = el('div', 'dash-header');
@@ -29,7 +31,7 @@ function renderDashboard() {
   `;
   view.appendChild(header);
 
-  // Next competition banner if set
+  // Next competition banner
   if (dates.nextCompName && dates.nextCompDate) {
     const nextD = new Date(dates.nextCompDate + 'T12:00:00');
     const daysUntil = Math.ceil((nextD - new Date()) / 86400000);
@@ -51,7 +53,6 @@ function renderDashboard() {
   scroll.appendChild(content);
   view.appendChild(scroll);
 
-  // Countdown
   content.appendChild(buildCountdown());
 
   // Upgrade targets
@@ -81,11 +82,10 @@ function renderDashboard() {
   // Latest competition
   if (latest) {
     const aa = Data.allAroundScore(latest);
-    const card = el('div', 'card');
     const resultRows = Data.APPARATUS.map(app => {
       const r = latest.results.find(x => x.apparatus === app);
       if (!r) return '';
-      const isPB      = !r.dna && r.score === pbs[app];
+      const isPB = !r.dna && r.score === pbs[app];
       const isUpgrade = Data.UPGRADE_TARGETS.includes(app);
       const scoreBadge = r.dna
         ? `<span class="score-badge dna">DNA</span>`
@@ -100,6 +100,7 @@ function renderDashboard() {
         </div>`;
     }).join('');
 
+    const card = el('div', 'card');
     card.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
         <div>
@@ -120,7 +121,7 @@ function renderDashboard() {
     content.appendChild(wrap);
   }
 
-  // Personal bests
+  // PBs
   const pbWrap = el('div');
   pbWrap.innerHTML = `<div class="section-heading"><div class="s-title">Personal Bests 👑</div></div>`;
   const pbGrid = el('div', 'pb-grid');

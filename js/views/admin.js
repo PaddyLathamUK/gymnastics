@@ -1,14 +1,11 @@
 /* ── Admin / Settings View ── */
 
-function renderAdmin() {
+async function renderAdmin() {
   const view = document.getElementById('view-admin');
   view.innerHTML = '';
 
   const nav = el('div', 'nav-bar');
-  nav.innerHTML = `
-    <button class="nav-back" onclick="closeAdmin()">‹ Back</button>
-    <div class="nav-title">Admin</div>
-  `;
+  nav.innerHTML = `<button class="nav-back" onclick="closeAdmin()">‹ Back</button><div class="nav-title">Admin</div>`;
   view.appendChild(nav);
 
   const scroll = el('div', 'scroll-area');
@@ -16,8 +13,14 @@ function renderAdmin() {
   scroll.appendChild(content);
   view.appendChild(scroll);
 
+  const [profile, dates, comps, sessions] = await Promise.all([
+    Data.getProfile(),
+    Data.getDates(),
+    Data.getCompetitions(),
+    Data.getSessions(),
+  ]);
+
   // ── Athlete Profile ──────────────────────
-  const profile = Data.getProfile();
   const profileCard = el('div', 'card');
   profileCard.innerHTML = `
     <div class="admin-section-title">👤 Athlete Profile</div>
@@ -50,7 +53,6 @@ function renderAdmin() {
   content.appendChild(profileCard);
 
   // ── Key Dates ────────────────────────────
-  const dates = Data.getDates();
   const datesCard = el('div', 'card');
   datesCard.innerHTML = `
     <div class="admin-section-title">📅 Key Dates</div>
@@ -70,11 +72,9 @@ function renderAdmin() {
   `;
   content.appendChild(datesCard);
 
-  // ── Manage Competitions ──────────────────
-  const comps = Data.getCompetitions();
+  // ── Competitions ─────────────────────────
   const compsCard = el('div', 'card');
   compsCard.innerHTML = `<div class="admin-section-title">📋 Competitions</div>`;
-
   if (comps.length === 0) {
     compsCard.innerHTML += `<div style="font-size:13px;color:var(--text-soft);margin-top:10px;">No competitions yet.</div>`;
   } else {
@@ -93,7 +93,6 @@ function renderAdmin() {
       compsCard.appendChild(row);
     });
   }
-
   const addCompBtn = el('button', 'btn-primary');
   addCompBtn.style.marginTop = '12px';
   addCompBtn.textContent = '＋ Add Competition';
@@ -101,11 +100,9 @@ function renderAdmin() {
   compsCard.appendChild(addCompBtn);
   content.appendChild(compsCard);
 
-  // ── Manage Training Sessions ─────────────
-  const sessions = Data.getSessions();
+  // ── Training Sessions ─────────────────────
   const sessCard = el('div', 'card');
   sessCard.innerHTML = `<div class="admin-section-title">🤸 Training Sessions</div>`;
-
   if (sessions.length === 0) {
     sessCard.innerHTML += `<div style="font-size:13px;color:var(--text-soft);margin-top:10px;">No sessions logged yet.</div>`;
   } else {
@@ -126,7 +123,6 @@ function renderAdmin() {
       sessCard.appendChild(row);
     });
   }
-
   const addSessBtn = el('button', 'btn-primary');
   addSessBtn.style.marginTop = '12px';
   addSessBtn.textContent = '＋ Log Session';
@@ -134,18 +130,45 @@ function renderAdmin() {
   sessCard.appendChild(addSessBtn);
   content.appendChild(sessCard);
 
-  // ── Danger zone ──────────────────────────
+  // ── Migrate from localStorage ─────────────
+  const migrateCard = el('div', 'card');
+  migrateCard.innerHTML = `
+    <div class="admin-section-title">🔄 Data Migration</div>
+    <div style="font-size:13px;color:var(--text-soft);margin-top:8px;margin-bottom:12px;">
+      If you previously used this app, migrate your local data to the shared database.
+    </div>
+  `;
+  const migrateBtn = el('button', 'btn-primary');
+  migrateBtn.textContent = 'Migrate Local Data to Database';
+  migrateBtn.onclick = async () => {
+    migrateBtn.textContent = 'Migrating…';
+    migrateBtn.disabled = true;
+    try {
+      const count = await Data.migrateFromLocalStorage();
+      showToast(`Migrated ${count} records ✓`);
+      renderAdmin();
+    } catch(e) {
+      showToast('Migration failed — check console');
+      console.error(e);
+    }
+  };
+  migrateCard.appendChild(migrateBtn);
+  content.appendChild(migrateCard);
+
+  // ── Danger zone ───────────────────────────
   const dangerCard = el('div', 'card');
   dangerCard.innerHTML = `<div class="admin-section-title" style="color:var(--red);">⚠️ Data</div>`;
   const resetBtn = el('button', 'btn-cancel');
   resetBtn.style.cssText = 'width:100%;margin-top:10px;color:var(--red);border-color:rgba(255,91,122,0.25);';
-  resetBtn.textContent = 'Reset to Seed Data';
-  resetBtn.onclick = () => {
-    if (confirm('This will delete all data and restore the original seed data. Are you sure?')) {
-      Object.values({ ...Object.fromEntries(Object.entries(localStorage).filter(([k]) => k.startsWith('thea_'))) })
-        .forEach(() => {});
-      ['thea_competitions','thea_sessions','thea_achievements','thea_worlds','thea_profile','thea_dates'].forEach(k => localStorage.removeItem(k));
-      Data.init();
+  resetBtn.textContent = 'Reset All Data';
+  resetBtn.onclick = async () => {
+    if (confirm('This will delete ALL data from the database. Are you sure?')) {
+      await db.from('competition_results').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await db.from('competitions').delete().neq('id', 'none');
+      await db.from('training_sessions').delete().neq('id', 'none');
+      await db.from('achievements').delete().neq('id', 'none');
+      await db.from('worlds_state').update({ vault: false, beam: false }).eq('id', 1);
+      await Data.init();
       renderAdmin();
       renderDashboard();
     }
@@ -154,135 +177,30 @@ function renderAdmin() {
   content.appendChild(dangerCard);
 }
 
-// ── Edit competition (reuses add sheet) ──
-function openEditComp(id) {
-  const comp = Data.getCompetitions().find(c => c.id === id);
-  if (!comp) return;
-  closeAdmin();
-  const sheet = document.getElementById('sheet-comp');
-  sheet.querySelector('.sheet-title').textContent = 'Edit Competition';
-  sheet.querySelector('.sheet-body').innerHTML = buildCompForm(comp);
-  sheet.classList.add('open');
-}
-
-function confirmDeleteComp(id, name) {
-  if (confirm(`Delete "${name}"? This cannot be undone.`)) {
-    Data.deleteCompetition(id);
-    renderAdmin();
-    renderDashboard();
-    renderCompetitions();
-  }
-}
-
-// ── Edit session ──────────────────────────
-function openEditSession(id) {
-  const sess = Data.getSessions().find(s => s.id === id);
-  if (!sess) return;
-  closeAdmin();
-
-  const sheet = document.getElementById('sheet-session');
-  sheet.querySelector('.sheet-title').textContent = 'Edit Session';
-  sheet.querySelector('.sheet-body').innerHTML = buildSessionForm(sess);
-  sheet.classList.add('open');
-}
-
-function buildSessionForm(sess) {
-  const durOptions = [90,120,150,180,210,240].map(m =>
-    `<option value="${m}" ${sess?.durationMins === m ? 'selected' : ''}>${Math.floor(m/60)}h${m%60 ? ' '+(m%60)+'m':''}</option>`
-  ).join('');
-
-  const appChecks = Data.APPARATUS.map(app => {
-    const isU     = Data.UPGRADE_TARGETS.includes(app);
-    const checked = sess?.focus.includes(app) ? 'checked' : '';
-    return `
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;
-        background:var(--white);border:1.5px solid #e0d8ff;border-radius:12px;
-        padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);">
-        <input type="checkbox" value="${app}" name="sf-app" ${checked} style="accent-color:var(--purple);">
-        ${app}${isU ? ' ⭐' : ''}
-      </label>`;
-  }).join('');
-
-  const existingId = sess?.id || '';
-  return `
-    <div class="form-group">
-      <label class="form-label">Date</label>
-      <input class="form-input" id="sf-date" type="date" value="${sess?.date || new Date().toISOString().slice(0,10)}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Duration</label>
-      <select class="form-select" id="sf-dur">${durOptions}</select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Focus Apparatus</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">${appChecks}</div>
-    </div>
-    <div class="form-group">
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600;color:var(--text-mid);">
-        <input type="checkbox" id="sf-flagged" ${sess?.flagged ? 'checked' : ''} style="accent-color:var(--purple);">
-        Flag as Upgrade Focus Session
-      </label>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Notes</label>
-      <textarea class="form-textarea" id="sf-notes">${sess?.notes || ''}</textarea>
-    </div>
-    <div class="form-actions">
-      <button class="btn-cancel" onclick="closeSheet('sheet-session')">Cancel</button>
-      <button class="btn-primary" style="flex:2;" onclick="saveSessionWithId('${existingId}')">Save Session</button>
-    </div>
-  `;
-}
-
-function saveSessionWithId(existingId) {
-  const date = document.getElementById('sf-date')?.value;
-  if (!date) return;
-  Data.saveSession({
-    id:          existingId || Data.uid(),
-    date,
-    durationMins: parseInt(document.getElementById('sf-dur')?.value) || 180,
-    focus:       [...document.querySelectorAll('input[name="sf-app"]:checked')].map(c => c.value),
-    flagged:     document.getElementById('sf-flagged')?.checked || false,
-    notes:       document.getElementById('sf-notes')?.value?.trim() || '',
-  });
-  closeSheet('sheet-session');
-  renderTraining();
-}
-
-function confirmDeleteSession(id) {
-  if (confirm('Delete this training session?')) {
-    Data.deleteSession(id);
-    renderAdmin();
-    renderTraining();
-  }
-}
-
-// ── Profile save ──────────────────────────
-function saveProfile() {
-  Data.saveProfile({
+// ── Profile / Dates save ──────────────────
+async function saveProfile() {
+  await Data.saveProfile({
     name:        document.getElementById('adm-name')?.value?.trim() || 'Thea Latham',
     club:        document.getElementById('adm-club')?.value?.trim() || 'Star-Tastic Gymnastics',
     usaigcLevel: document.getElementById('adm-usaigc')?.value || 'Copper 1',
     igaLevel:    document.getElementById('adm-iga')?.value || 'Level 8',
   });
-  renderDashboard();
+  await renderDashboard();
   showToast('Profile saved ✓');
 }
 
-// ── Dates save ────────────────────────────
-function saveDates() {
+async function saveDates() {
   const worldsDate = document.getElementById('adm-worlds')?.value;
-  if (worldsDate) Data.WORLDS_DATE = new Date(worldsDate + 'T09:00:00');
-  Data.saveDates({
+  await Data.saveDates({
     worldsDate:   worldsDate || '2026-06-27',
     nextCompName: document.getElementById('adm-nextname')?.value?.trim() || '',
     nextCompDate: document.getElementById('adm-nextdate')?.value || '',
   });
-  renderDashboard();
+  await renderDashboard();
   showToast('Dates saved ✓');
 }
 
-// ── Open / close admin ─────────────────────
+// ── Open / close admin ────────────────────
 function openAdmin() {
   renderAdmin();
   document.getElementById('view-admin').classList.add('active');
@@ -292,7 +210,7 @@ function closeAdmin() {
   document.getElementById('view-admin').classList.remove('active');
 }
 
-// ── Toast notification ─────────────────────
+// ── Toast ─────────────────────────────────
 function showToast(msg) {
   let toast = document.getElementById('toast');
   if (!toast) {
@@ -302,13 +220,12 @@ function showToast(msg) {
       position:fixed;bottom:110px;left:50%;transform:translateX(-50%);
       background:#2D1B69;color:#fff;font-size:13px;font-weight:700;
       padding:10px 20px;border-radius:20px;z-index:500;
-      box-shadow:0 4px 20px rgba(45,27,105,0.4);
-      transition:opacity 0.3s;
+      box-shadow:0 4px 20px rgba(45,27,105,0.4);transition:opacity 0.3s;
     `;
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
   toast.style.opacity = '1';
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+  toast._t = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
 }

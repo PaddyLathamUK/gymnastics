@@ -3,26 +3,23 @@
 let compOrgFilter = 'All';
 let compDetailId  = null;
 
-function renderCompetitions() {
+async function renderCompetitions() {
   const view = document.getElementById('view-comps');
   view.innerHTML = '';
 
   if (compDetailId) {
-    renderCompDetail(view);
+    await renderCompDetail(view);
     return;
   }
 
-  // Nav bar
   const nav = el('div', 'nav-bar');
   nav.innerHTML = `<div class="nav-title">Competitions</div>`;
   const addBtn = el('button', 'nav-action');
   addBtn.textContent = '+';
-  addBtn.setAttribute('aria-label', 'Add competition');
   addBtn.onclick = () => openAddComp();
   nav.appendChild(addBtn);
   view.appendChild(nav);
 
-  // Org filters
   const filterRow = el('div', 'filter-row');
   for (const org of ['All', 'USAIGC', 'IGA UK']) {
     const chip = el('div', `filter-chip${org === compOrgFilter ? ' active' : ''}`);
@@ -32,15 +29,14 @@ function renderCompetitions() {
   }
   view.appendChild(filterRow);
 
-  // Progress chart for Vault (always shown)
-  const pbs = Data.getPersonalBests();
-  const allComps = Data.getCompetitions();
+  const allComps = await Data.getCompetitions();
+  const pbs = await Data.getPersonalBests();
+
   const chartWrap = el('div');
   chartWrap.style.padding = '4px 16px 0';
   chartWrap.appendChild(buildProgressChart(allComps, 'Vault'));
   view.appendChild(chartWrap);
 
-  // List
   const scroll = el('div', 'scroll-area');
   const content = el('div', 'scroll-content');
   scroll.appendChild(content);
@@ -60,10 +56,11 @@ function renderCompetitions() {
 function buildCompCard(comp, pbs) {
   const aa = Data.allAroundScore(comp);
   const card = el('div', 'comp-card');
-
   const miniScores = Data.APPARATUS.map(app => {
     const r = comp.results.find(x => x.apparatus === app);
-    return r ? `<div class="ms"><div class="ms-lbl">${app.slice(0,2).toUpperCase()}</div><div class="ms-val ${r.score === pbs[app] ? 'pb' : ''}">${r.score.toFixed(1)}</div></div>` : '';
+    if (!r) return '';
+    if (r.dna) return `<div class="ms"><div class="ms-lbl">${app.slice(0,2).toUpperCase()}</div><div class="ms-val" style="color:var(--text-soft);font-size:10px;">DNA</div></div>`;
+    return `<div class="ms"><div class="ms-lbl">${app.slice(0,2).toUpperCase()}</div><div class="ms-val ${r.score === pbs[app] ? 'pb' : ''}">${r.score.toFixed(1)}</div></div>`;
   }).join('');
 
   card.innerHTML = `
@@ -88,12 +85,12 @@ function buildCompCard(comp, pbs) {
   return card;
 }
 
-function renderCompDetail(view) {
-  const comp = Data.getCompetitions().find(c => c.id === compDetailId);
+async function renderCompDetail(view) {
+  const allComps = await Data.getCompetitions();
+  const comp = allComps.find(c => c.id === compDetailId);
   if (!comp) { compDetailId = null; renderCompetitions(); return; }
-  const pbs = Data.getPersonalBests();
+  const pbs = await Data.getPersonalBests();
   const aa  = Data.allAroundScore(comp);
-  const allComps = Data.getCompetitions();
 
   const nav = el('div', 'nav-bar');
   nav.innerHTML = `
@@ -129,12 +126,12 @@ function renderCompDetail(view) {
   `;
   content.appendChild(headerCard);
 
-  // Results card
+  // Results
   const resultsCard = el('div', 'card');
   const rows = Data.APPARATUS.map(app => {
     const r = comp.results.find(x => x.apparatus === app);
     if (!r) return '';
-    const isPB      = !r.dna && r.score === pbs[app];
+    const isPB = !r.dna && r.score === pbs[app];
     const isUpgrade = Data.UPGRADE_TARGETS.includes(app);
     const scoreBadge = r.dna
       ? `<span class="score-badge dna">DNA</span>`
@@ -148,13 +145,10 @@ function renderCompDetail(view) {
         ${scoreBadge}
       </div>`;
   }).join('');
-  resultsCard.innerHTML = `
-    <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px;">Results</div>
-    ${rows}
-  `;
+  resultsCard.innerHTML = `<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px;">Results</div>${rows}`;
   content.appendChild(resultsCard);
 
-  // Progress charts
+  // Charts
   const chartsCard = el('div', 'card');
   chartsCard.innerHTML = `<div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px;">Progress</div>`;
   for (const app of Data.APPARATUS) {
@@ -166,7 +160,6 @@ function renderCompDetail(view) {
   }
   content.appendChild(chartsCard);
 
-  // Notes
   if (comp.notes) {
     const notesCard = el('div', 'card');
     notesCard.innerHTML = `
@@ -176,13 +169,12 @@ function renderCompDetail(view) {
     content.appendChild(notesCard);
   }
 
-  // Delete
   const delBtn = el('button', 'btn-cancel');
   delBtn.style.cssText = 'width:100%;color:var(--red);border-color:rgba(255,91,122,0.2);';
   delBtn.textContent = 'Delete Competition';
-  delBtn.onclick = () => {
+  delBtn.onclick = async () => {
     if (confirm(`Delete "${comp.name}"?`)) {
-      Data.deleteCompetition(comp.id);
+      await Data.deleteCompetition(comp.id);
       compDetailId = null;
       renderCompetitions();
     }
@@ -192,7 +184,7 @@ function renderCompDetail(view) {
 
 function buildProgressChart(comps, apparatus) {
   const sorted = [...comps]
-    .filter(c => c.results.some(r => r.apparatus === apparatus))
+    .filter(c => c.results.some(r => r.apparatus === apparatus && !r.dna))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   const wrap = el('div', 'chart-wrap');
@@ -201,10 +193,10 @@ function buildProgressChart(comps, apparatus) {
     return wrap;
   }
 
-  const scores = sorted.map(c => c.results.find(r => r.apparatus === apparatus)?.score || 0);
+  const scores = sorted.map(c => c.results.find(r => r.apparatus === apparatus && !r.dna)?.score || 0);
   const minS = Math.max(0, Math.min(...scores) - 0.5);
   const maxS = Math.max(...scores) + 0.2;
-  const range = maxS - minS;
+  const range = maxS - minS || 1;
   const W = 320, H = 70;
   const pts = scores.map((s, i) => ({
     x: i === 0 ? 20 : i === scores.length - 1 ? W - 20 : 20 + (i / (scores.length - 1)) * (W - 40),
@@ -215,7 +207,6 @@ function buildProgressChart(comps, apparatus) {
 
   const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const areaD = `${pathD} L ${pts[pts.length-1].x} ${H+5} L ${pts[0].x} ${H+5} Z`;
-
   const circles = pts.map(p => `
     <circle cx="${p.x}" cy="${p.y}" r="4" fill="#9B82FF"/>
     <text x="${p.x}" y="${p.y - 8}" text-anchor="middle" font-size="9" fill="#7B5FFF" font-weight="700">${p.score.toFixed(2)}</text>
@@ -225,12 +216,12 @@ function buildProgressChart(comps, apparatus) {
   wrap.innerHTML = `
     <svg viewBox="0 0 ${W} ${H + 22}" preserveAspectRatio="none">
       <defs>
-        <linearGradient id="grad-${apparatus}" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id="grad-${apparatus.replace(/\s/g,'')}" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#7B5FFF" stop-opacity="0.2"/>
           <stop offset="100%" stop-color="#7B5FFF" stop-opacity="0.02"/>
         </linearGradient>
       </defs>
-      <path d="${areaD}" fill="url(#grad-${apparatus})"/>
+      <path d="${areaD}" fill="url(#grad-${apparatus.replace(/\s/g,'')})"/>
       <path d="${pathD}" fill="none" stroke="#7B5FFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       ${circles}
     </svg>
@@ -241,6 +232,7 @@ function buildProgressChart(comps, apparatus) {
 // ── Add Competition Sheet ──
 function openAddComp() {
   const sheet = document.getElementById('sheet-comp');
+  sheet.querySelector('.sheet-title').textContent = 'Add Competition';
   sheet.querySelector('.sheet-body').innerHTML = buildCompForm();
   sheet.classList.add('open');
 }
@@ -263,11 +255,9 @@ function buildCompForm(existingComp) {
         </div>
         <div class="app-input-row" id="inputs-${app}" style="${isDNA ? 'opacity:0.3;pointer-events:none;' : ''}">
           <input type="number" step="0.01" min="0" max="10" placeholder="Score"
-            id="score-${app}" value="${r && !isDNA ? r.score : ''}" class="score-field"
-            ${isDNA ? 'disabled' : ''}>
+            id="score-${app}" value="${r && !isDNA ? r.score : ''}" class="score-field" ${isDNA ? 'disabled' : ''}>
           <input type="number" min="1" max="30" placeholder="Pos"
-            id="pos-${app}" value="${r?.position && !isDNA ? r.position : ''}" class="pos-input pos-field"
-            ${isDNA ? 'disabled' : ''}>
+            id="pos-${app}" value="${r?.position && !isDNA ? r.position : ''}" class="pos-input pos-field" ${isDNA ? 'disabled' : ''}>
         </div>
       </div>`;
   }).join('');
@@ -326,20 +316,18 @@ function toggleDNA(app) {
   const scoreEl = document.getElementById(`score-${app}`);
   const posEl   = document.getElementById(`pos-${app}`);
   if (isDNA) { scoreEl.value = ''; posEl.value = ''; scoreEl.disabled = true; posEl.disabled = true; }
-  else        { scoreEl.disabled = false; posEl.disabled = false; }
+  else { scoreEl.disabled = false; posEl.disabled = false; }
 }
 
-function saveComp(existingId) {
-  const name  = document.getElementById('f-name')?.value?.trim();
+async function saveComp(existingId) {
+  const name = document.getElementById('f-name')?.value?.trim();
   if (!name) { alert('Please enter a competition name.'); return; }
 
   const results = Data.APPARATUS.map(app => {
-    const isDNA   = document.getElementById(`dna-${app}`)?.checked;
+    const isDNA = document.getElementById(`dna-${app}`)?.checked;
     if (isDNA) return { apparatus: app, score: 0, position: undefined, dna: true };
-    const scoreEl = document.getElementById(`score-${app}`);
-    const posEl   = document.getElementById(`pos-${app}`);
-    const score   = parseFloat(scoreEl?.value);
-    const position = parseInt(posEl?.value) || undefined;
+    const score = parseFloat(document.getElementById(`score-${app}`)?.value);
+    const position = parseInt(document.getElementById(`pos-${app}`)?.value) || undefined;
     if (!isNaN(score) && score > 0) return { apparatus: app, score, position, dna: false };
     return null;
   }).filter(Boolean);
@@ -355,9 +343,29 @@ function saveComp(existingId) {
     results,
   };
 
-  Data.saveCompetition(comp);
+  await Data.saveCompetition(comp);
   closeSheet('sheet-comp');
   renderDashboard();
   renderAchievements();
   renderCompetitions();
+}
+
+async function openEditComp(id) {
+  const comps = await Data.getCompetitions();
+  const comp = comps.find(c => c.id === id);
+  if (!comp) return;
+  closeAdmin();
+  const sheet = document.getElementById('sheet-comp');
+  sheet.querySelector('.sheet-title').textContent = 'Edit Competition';
+  sheet.querySelector('.sheet-body').innerHTML = buildCompForm(comp);
+  sheet.classList.add('open');
+}
+
+async function confirmDeleteComp(id, name) {
+  if (confirm(`Delete "${name}"? This cannot be undone.`)) {
+    await Data.deleteCompetition(id);
+    renderAdmin();
+    renderDashboard();
+    renderCompetitions();
+  }
 }
