@@ -26,6 +26,11 @@ async function renderAdmin() {
     content.appendChild(await buildInvitesCard());
   }
 
+  // ── Gymnast logins (admin + parent) ──────
+  if (Auth.isAdmin || Auth.isParent) {
+    content.appendChild(await buildGymnastLoginsCard());
+  }
+
   // ── Athlete Profile ──────────────────────
   const profileCard = el('div', 'card');
   profileCard.innerHTML = `
@@ -379,6 +384,105 @@ async function copyInvite(url, btn) {
     setTimeout(() => btn.textContent = orig, 2000);
   } catch {
     prompt('Copy this link:', url);
+  }
+}
+
+// ── Gymnast logins card ───────────────────
+async function buildGymnastLoginsCard() {
+  const card = el('div', 'card');
+  card.innerHTML = `<div class="admin-section-title">🔑 Gymnast Logins</div>
+    <div style="font-size:13px;color:var(--text-soft);margin-top:4px;margin-bottom:12px;">
+      Set up usernames and passwords so gymnasts can log in themselves.
+    </div>`;
+
+  // Fetch fresh gymnast data including username
+  const ids = Auth.gymnasts.map(g => g.id);
+  if (!ids.length) {
+    card.innerHTML += `<div style="font-size:13px;color:var(--text-soft);">No gymnasts linked yet.</div>`;
+    return card;
+  }
+
+  const { data: gymnasts } = await db.from('gymnasts').select('id, name, username, user_id').in('id', ids);
+
+  (gymnasts || []).forEach(g => {
+    const hasLogin = !!g.user_id;
+    const row = el('div', 'admin-row');
+    row.style.flexDirection = 'column';
+    row.style.alignItems = 'flex-start';
+    row.style.gap = '10px';
+    row.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+        <div>
+          <div class="admin-row-title">🤸 ${g.name}</div>
+          <div class="admin-row-sub">${hasLogin ? `Username: <strong>${g.username}</strong>` : 'No login set up yet'}</div>
+        </div>
+        <button class="admin-btn edit" onclick="toggleGymnastLoginForm('${g.id}', ${hasLogin})">
+          ${hasLogin ? 'Change Password' : 'Set Up Login'}
+        </button>
+      </div>
+      <div id="glf-${g.id}" style="display:none;width:100%;background:var(--purple-bg);border-radius:12px;padding:12px;">
+        ${!hasLogin ? `
+        <div class="form-label" style="margin-bottom:4px;">Username</div>
+        <input class="form-input" id="gl-user-${g.id}" placeholder="e.g. thea.latham" style="margin-bottom:10px;background:white;"
+               value="${g.name.toLowerCase().replace(/\s+/g, '.')}">
+        ` : ''}
+        <div class="form-label" style="margin-bottom:4px;">${hasLogin ? 'New Password' : 'Password'}</div>
+        <input class="form-input" id="gl-pass-${g.id}" type="password" placeholder="8+ characters" style="margin-bottom:10px;background:white;">
+        <div class="form-label" style="margin-bottom:4px;">Confirm Password</div>
+        <input class="form-input" id="gl-pass2-${g.id}" type="password" placeholder="Repeat password" style="margin-bottom:10px;background:white;">
+        <div id="gl-err-${g.id}" style="display:none;font-size:13px;color:var(--red);margin-bottom:8px;"></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-primary" style="flex:1;padding:10px;" onclick="saveGymnastLogin('${g.id}', ${hasLogin})">Save</button>
+          <button class="btn-cancel" style="flex:0 0 auto;padding:10px 14px;" onclick="document.getElementById('glf-${g.id}').style.display='none'">✕</button>
+        </div>
+      </div>
+    `;
+    card.appendChild(row);
+  });
+
+  return card;
+}
+
+function toggleGymnastLoginForm(gymnastId, hasLogin) {
+  const form = document.getElementById(`glf-${gymnastId}`);
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') {
+    const passEl = document.getElementById(`gl-pass-${gymnastId}`);
+    if (passEl) passEl.focus();
+  }
+}
+
+async function saveGymnastLogin(gymnastId, hasLogin) {
+  const usernameEl = document.getElementById(`gl-user-${gymnastId}`);
+  const username   = usernameEl?.value.trim();
+  const password   = document.getElementById(`gl-pass-${gymnastId}`).value;
+  const password2  = document.getElementById(`gl-pass2-${gymnastId}`).value;
+  const errEl      = document.getElementById(`gl-err-${gymnastId}`);
+
+  errEl.style.display = 'none';
+
+  if (!hasLogin && !username) { errEl.textContent = 'Please enter a username'; errEl.style.display = 'block'; return; }
+  if (password.length < 8)    { errEl.textContent = 'Password must be at least 8 characters'; errEl.style.display = 'block'; return; }
+  if (password !== password2) { errEl.textContent = 'Passwords do not match'; errEl.style.display = 'block'; return; }
+
+  const btn = document.querySelector(`#glf-${gymnastId} .btn-primary`);
+  btn.textContent = 'Saving…';
+  btn.disabled = true;
+
+  try {
+    if (hasLogin) {
+      await Auth.updateGymnastPassword(gymnastId, password);
+    } else {
+      await Auth.setupGymnastLogin(gymnastId, username, password);
+    }
+    showToast(hasLogin ? 'Password updated ✓' : 'Login created ✓');
+    document.getElementById(`glf-${gymnastId}`).style.display = 'none';
+    renderAdmin();
+  } catch(e) {
+    errEl.textContent = e.message || 'Failed — try again';
+    errEl.style.display = 'block';
+    btn.textContent = 'Save';
+    btn.disabled = false;
   }
 }
 

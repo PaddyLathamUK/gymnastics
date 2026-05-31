@@ -43,8 +43,8 @@ const AuthView = {
 
       <div class="auth-form">
         <div class="auth-field">
-          <label>Email</label>
-          <input id="auth-email" type="email" placeholder="your@email.com" autocomplete="email">
+          <label>Email or Username</label>
+          <input id="auth-email" type="text" placeholder="your@email.com or username" autocomplete="username">
         </div>
         <div class="auth-field">
           <label>Password</label>
@@ -65,8 +65,12 @@ const AuthView = {
   },
 
   async _doLogin() {
-    const email    = document.getElementById('auth-email').value.trim();
+    let email      = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value;
+    // Username login — convert to synthetic email
+    if (email && !email.includes('@')) {
+      email = `${email.toLowerCase().replace(/[^a-z0-9]/g, '.')}@gymnastics.internal`;
+    }
     const btn      = document.getElementById('auth-login-btn');
     if (!email || !password) return;
     this._setError(null);

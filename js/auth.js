@@ -185,4 +185,44 @@ const Auth = {
   inviteUrl(token) {
     return `${location.origin}${location.pathname}?invite=${token}`;
   },
+
+  // ── Gymnast account management (via Edge Function) ──
+  async setupGymnastLogin(gymnastId, username, password) {
+    const { data: { session } } = await db.auth.getSession();
+    const resp = await fetch(
+      'https://absdbhasbcxfskapwzer.supabase.co/functions/v1/manage-gymnast-user',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: 'create', gymnast_id: gymnastId, username, password }),
+      }
+    );
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || 'Failed to create login');
+    // Update local cache
+    const g = this.gymnasts.find(g => g.id === gymnastId);
+    if (g) g.username = username;
+    return result;
+  },
+
+  async updateGymnastPassword(gymnastId, password) {
+    const { data: { session } } = await db.auth.getSession();
+    const resp = await fetch(
+      'https://absdbhasbcxfskapwzer.supabase.co/functions/v1/manage-gymnast-user',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: 'update_password', gymnast_id: gymnastId, password }),
+      }
+    );
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || 'Failed to update password');
+    return result;
+  },
 };
