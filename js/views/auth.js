@@ -297,10 +297,19 @@ const AuthView = {
       const { data: authData, error: authError } = await db.auth.signUp({ email, password });
       if (authError) throw authError;
       const userId = authData.user.id;
+      // Insert profile before session exists (bootstrap RLS policy allows this)
       const { error: profError } = await db.from('profiles')
         .insert({ id: userId, full_name: 'Admin', role: 'admin' });
       if (profError) throw profError;
-      await Auth.login(email, password);
+      // Sign in — requires email confirmation to be OFF in Supabase dashboard
+      const { error: loginError } = await db.auth.signInWithPassword({ email, password });
+      if (loginError) {
+        this._setError('Account created! Check your email to confirm, then sign in normally.');
+        btn.textContent = 'Create Admin Account';
+        btn.disabled = false;
+        return;
+      }
+      await Auth._loadProfile();
       this.hide();
       appAfterAuth();
     } catch (e) {
