@@ -113,11 +113,70 @@ function closeSheet(id) {
   document.getElementById(id)?.classList.remove('open');
 }
 
+// ── Gymnast switcher (header pill) ─────────
+function buildGymnastSwitcher() {
+  const el = document.getElementById('gymnast-switcher');
+  if (!el) return;
+  const gymnasts = Auth.gymnasts;
+  if (gymnasts.length <= 1) { el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = gymnasts.map(g => `
+    <button class="gs-pill ${Auth.gymnast?.id === g.id ? 'active' : ''}"
+            onclick="selectGymnast('${g.id}')">${g.name.split(' ')[0]}</button>
+  `).join('');
+}
+
+async function selectGymnast(id) {
+  Auth.selectGymnast(id);
+  buildGymnastSwitcher();
+  await switchView(activeView);
+}
+
+// ── Role-gated write actions ────────────────
+function canWrite() { return Auth.canWrite; }
+
 // ── Init ───────────────────────────────────
 async function appInit() {
+  // Check for invite token in URL
+  const params      = new URLSearchParams(location.search);
+  const inviteToken = params.get('invite');
+
+  // Boot auth — show login if no session
+  const loggedIn = await Auth.init();
+  if (!loggedIn) {
+    AuthView.show(inviteToken);
+    return;
+  }
+
+  // Clean invite param from URL without reload
+  if (inviteToken) history.replaceState({}, '', location.pathname);
+
+  await appAfterAuth();
+}
+
+// Called after successful login / signup
+async function appAfterAuth() {
+  // New parent with no gymnasts yet → prompt setup
+  if (Auth.isParent && Auth.gymnasts.length === 0) {
+    AuthView.showGymnastSetup();
+    return;
+  }
+
   showLoading('view-home');
   await Data.init();
   hideLoading('view-home');
+
+  // Show/hide write actions based on role
+  document.querySelectorAll('.write-only').forEach(el => {
+    el.style.display = Auth.canWrite ? '' : 'none';
+  });
+
+  // Supporter gets a slimmer tab bar (no training tab)
+  if (Auth.isSupporter) {
+    document.getElementById('tab-training')?.style.setProperty('display', 'none');
+  }
+
+  buildGymnastSwitcher();
   updateClock();
   setInterval(updateClock, 10000);
   setInterval(tickCountdowns, 1000);

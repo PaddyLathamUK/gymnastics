@@ -877,6 +877,135 @@ body {
 .ncb-title { font-size: 13px; font-weight: 700; color: var(--text); }
 .ncb-sub   { font-size: 11px; color: var(--text-soft); margin-top: 1px; }
 
+/* ── Auth overlay ── */
+#auth-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(155deg, #e6e0ff 0%, #d8cfff 60%, #ccc3ff 100%);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+#auth-overlay.active { display: flex; }
+
+#auth-card {
+  background: var(--white);
+  border-radius: 28px;
+  padding: 32px 24px 28px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 20px 60px rgba(100,60,200,0.18), 0 4px 16px rgba(100,60,200,0.10);
+}
+
+.auth-logo {
+  font-size: 48px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.auth-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  text-align: center;
+  letter-spacing: -0.4px;
+}
+.auth-sub {
+  font-size: 14px;
+  color: var(--text-mid);
+  text-align: center;
+  margin-top: 4px;
+  margin-bottom: 24px;
+}
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-field { display: flex; flex-direction: column; gap: 5px; }
+.auth-field label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-mid);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.auth-field input {
+  border: 1.5px solid var(--purple-lt);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--purple-bg);
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.auth-field input:focus { border-color: var(--purple); background: var(--white); }
+.auth-btn {
+  margin-top: 4px;
+  background: linear-gradient(135deg, var(--purple) 0%, var(--purple-deep) 100%);
+  color: var(--white);
+  border: none;
+  border-radius: 14px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  font-family: inherit;
+}
+.auth-btn:active { transform: scale(0.97); }
+.auth-btn:disabled { opacity: 0.6; cursor: default; }
+.auth-link {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--purple);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.auth-error {
+  background: #fff0f3;
+  border: 1.5px solid var(--red);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--red);
+  font-weight: 500;
+}
+
+/* ── Gymnast switcher ── */
+#gymnast-switcher {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 0;
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+#gymnast-switcher::-webkit-scrollbar { display: none; }
+.gs-pill {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1.5px solid var(--purple-lt);
+  background: var(--white);
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.gs-pill.active {
+  background: var(--purple);
+  border-color: var(--purple);
+  color: var(--white);
+}
+
 /* ── Dashboard athlete header ── */
 .dash-header {
   padding: 14px 20px 4px;

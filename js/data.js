@@ -31,14 +31,20 @@ function allAroundScore(comp) {
   return (comp.results || []).filter(r => !r.dna).reduce((s, r) => s + r.score, 0);
 }
 
+// ── Active gymnast shortcut ─────────────────
+function gid() { return Auth.gymnast?.id || null; }
+
 // ── Init ───────────────────────────────────
 async function init() {
   const dates = await getDates();
   if (dates.worldsDate) {
     Data.WORLDS_DATE = new Date(dates.worldsDate + 'T09:00:00');
   }
-  const comps = await getCompetitions();
-  if (comps.length === 0) await seedData();
+  // Seed only for parent/admin with a fresh gymnast (no competitions yet)
+  if (Auth.canWrite) {
+    const comps = await getCompetitions();
+    if (comps.length === 0) await seedData();
+  }
 }
 
 async function seedData() {
@@ -88,10 +94,9 @@ async function seedData() {
 
 // ── Competitions ───────────────────────────
 async function getCompetitions() {
-  const { data: comps, error } = await db
-    .from('competitions')
-    .select('*, competition_results(*)')
-    .order('date', { ascending: false });
+  let q = db.from('competitions').select('*, competition_results(*)').order('date', { ascending: false });
+  if (gid()) q = q.eq('gymnast_id', gid());
+  const { data: comps, error } = await q;
   if (error) { console.error('getCompetitions:', error); return []; }
   return comps.map(c => ({
     id: c.id, name: c.name, venue: c.venue,
@@ -111,6 +116,7 @@ async function saveCompetition(comp) {
     id: comp.id, name: comp.name, venue: comp.venue || '',
     date: comp.date, organisation: comp.organisation,
     level: comp.level, notes: comp.notes || '',
+    gymnast_id: gid(),
   });
   if (compErr) { console.error('saveCompetition:', compErr); return; }
 
@@ -172,7 +178,9 @@ async function checkForNewPBs(comp, allComps) {
 
 // ── Sessions ───────────────────────────────
 async function getSessions() {
-  const { data, error } = await db.from('training_sessions').select('*').order('date', { ascending: false });
+  let q = db.from('training_sessions').select('*').order('date', { ascending: false });
+  if (gid()) q = q.eq('gymnast_id', gid());
+  const { data, error } = await q;
   if (error) { console.error('getSessions:', error); return []; }
   return data.map(s => ({
     id: s.id, date: s.date, durationMins: s.duration_mins,
@@ -190,6 +198,7 @@ async function saveSession(session) {
     session_time: session.sessionTime || '',
     photo_urls: session.photoUrls || [],
     recurring_group: session.recurringGroup || '',
+    gymnast_id: gid(),
   });
   if (error) console.error('saveSession:', error);
 }
@@ -248,7 +257,9 @@ async function deleteSessionPhoto(sessionId, url) {
 
 // ── Achievements ───────────────────────────
 async function getAchievements() {
-  const { data, error } = await db.from('achievements').select('*').order('date', { ascending: false });
+  let q = db.from('achievements').select('*').order('date', { ascending: false });
+  if (gid()) q = q.eq('gymnast_id', gid());
+  const { data, error } = await q;
   if (error) { console.error('getAchievements:', error); return []; }
   return data.map(a => ({
     id: a.id, kind: a.kind, title: a.title, detail: a.detail,
@@ -260,6 +271,7 @@ async function _saveAchievement(a) {
   await db.from('achievements').upsert({
     id: a.id, kind: a.kind, title: a.title, detail: a.detail,
     apparatus: a.apparatus || null, date: a.date, is_new: a.isNew ?? false,
+    gymnast_id: gid(),
   });
 }
 
@@ -269,16 +281,28 @@ async function markAchievementSeen(id) {
 
 // ── Worlds state ───────────────────────────
 async function getWorldsState() {
-  const { data } = await db.from('worlds_state').select('*').eq('id', 1).single();
+  let q = db.from('worlds_state').select('*');
+  if (gid()) q = q.eq('gymnast_id', gid()); else q = q.eq('id', 1);
+  const { data } = await q.single();
   return { vault: data?.vault || false, beam: data?.beam || false };
 }
 
 async function saveWorldsState(state) {
-  await db.from('worlds_state').update({ vault: state.vault, beam: state.beam }).eq('id', 1);
+  let q = db.from('worlds_state').update({ vault: state.vault, beam: state.beam });
+  if (gid()) q = q.eq('gymnast_id', gid()); else q = q.eq('id', 1);
+  await q;
 }
 
 // ── Profile ────────────────────────────────
 async function getProfile() {
+  // Use gymnasts table when authed; fall back to legacy profile table
+  if (Auth.gymnast) {
+    const g = Auth.gymnast;
+    return {
+      name: g.name, club: g.club || 'Star-Tastic Gymnastics',
+      usaigcLevel: g.usaigc_level || 'Copper 1', igaLevel: g.iga_level || 'Level 8',
+    };
+  }
   const { data } = await db.from('profile').select('*').eq('id', 1).single();
   return {
     name: data?.name || 'Thea Latham',
@@ -289,6 +313,18 @@ async function getProfile() {
 }
 
 async function saveProfile(profile) {
+  if (Auth.gymnast) {
+    await db.from('gymnasts').update({
+      name: profile.name, club: profile.club,
+      usaigc_level: profile.usaigcLevel, iga_level: profile.igaLevel,
+    }).eq('id', Auth.gymnast.id);
+    // Refresh local cache
+    Auth.gymnast.name = profile.name;
+    Auth.gymnast.club = profile.club;
+    Auth.gymnast.usaigc_level = profile.usaigcLevel;
+    Auth.gymnast.iga_level = profile.igaLevel;
+    return;
+  }
   await db.from('profile').update({
     name: profile.name, club: profile.club,
     usaigc_level: profile.usaigcLevel, iga_level: profile.igaLevel,
@@ -297,6 +333,15 @@ async function saveProfile(profile) {
 
 // ── Dates ──────────────────────────────────
 async function getDates() {
+  // Prefer gymnasts table for worlds/comp dates when authed
+  if (Auth.gymnast) {
+    const g = Auth.gymnast;
+    return {
+      worldsDate:   g.worlds_date    || '2026-06-27',
+      nextCompName: g.next_comp_name || '',
+      nextCompDate: g.next_comp_date || '',
+    };
+  }
   const { data } = await db.from('app_dates').select('*').eq('id', 1).single();
   return {
     worldsDate:   data?.worlds_date    || '2026-06-27',
@@ -306,6 +351,18 @@ async function getDates() {
 }
 
 async function saveDates(dates) {
+  if (Auth.gymnast) {
+    await db.from('gymnasts').update({
+      worlds_date:    dates.worldsDate   || null,
+      next_comp_name: dates.nextCompName || '',
+      next_comp_date: dates.nextCompDate || null,
+    }).eq('id', Auth.gymnast.id);
+    if (dates.worldsDate) Data.WORLDS_DATE = new Date(dates.worldsDate + 'T09:00:00');
+    Auth.gymnast.worlds_date    = dates.worldsDate;
+    Auth.gymnast.next_comp_name = dates.nextCompName;
+    Auth.gymnast.next_comp_date = dates.nextCompDate;
+    return;
+  }
   await db.from('app_dates').update({
     worlds_date:    dates.worldsDate   || null,
     next_comp_name: dates.nextCompName || '',
