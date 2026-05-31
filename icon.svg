@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9B82FF"/>
+      <stop offset="100%" stop-color="#5438CC"/>
+    </radialGradient>
+    <linearGradient id="star-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F5E070"/>
+      <stop offset="50%" stop-color="#F5C842"/>
+      <stop offset="100%" stop-color="#C89A00"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- Soft inner glow -->
+  <circle cx="256" cy="256" r="200" fill="rgba(255,255,255,0.06)"/>
+
+  <!-- Main star -->
+  <polygon
+    points="256,100 290,196 392,196 310,254 340,352 256,296 172,352 202,254 120,196 222,196"
+    fill="url(#star-grad)"
+    filter="url(#glow)"
+  />
+
+  <!-- Sparkle top-right: large -->
+  <g transform="translate(368, 118)" fill="#F5E070" opacity="0.95">
+    <polygon points="0,-18 4,-4 18,0 4,4 0,18 -4,4 -18,0 -4,-4" />
+  </g>
+
+  <!-- Sparkle bottom-left: medium -->
+  <g transform="translate(140, 370)" fill="#E8D5A3" opacity="0.85">
+    <polygon points="0,-12 3,-3 12,0 3,3 0,12 -3,3 -12,0 -3,-3" />
+  </g>
+
+  <!-- Sparkle top-left: small -->
+  <g transform="translate(158, 148)" fill="#fff" opacity="0.7">
+    <polygon points="0,-8 2,-2 8,0 2,2 0,8 -2,2 -8,0 -2,-2" />
+  </g>
+
+  <!-- Sparkle right: tiny -->
+  <g transform="translate(390, 310)" fill="#F5C842" opacity="0.8">
+    <polygon points="0,-7 2,-2 7,0 2,2 0,7 -2,2 -7,0 -2,-2" />
+  </g>
+
+  <!-- Centre dot shine on star -->
+  <circle cx="256" cy="235" r="18" fill="rgba(255,255,255,0.22)"/>
+</svg>
