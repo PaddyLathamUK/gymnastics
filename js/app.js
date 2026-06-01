@@ -86,7 +86,7 @@ function hideLoading(viewId) {
 }
 
 // ── Tab routing ────────────────────────────
-const VIEWS = ['home', 'comps', 'training', 'worlds', 'achievements'];
+const VIEWS = ['home', 'comps', 'worlds', 'training', 'achievements'];
 let activeView = 'home';
 
 async function switchView(name) {

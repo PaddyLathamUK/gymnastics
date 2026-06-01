@@ -107,6 +107,12 @@ async function getCompetitions() {
     id: c.id, name: c.name, venue: c.venue,
     date: c.date, organisation: c.organisation,
     level: c.level, notes: c.notes,
+    orgId: c.org_id, levelId: c.level_id,
+    tier: c.tier || 'local',
+    fieldSize: c.field_size || null,
+    overallPosition: c.overall_position || null,
+    ageCategoryId: c.age_category_id || null,
+    mediaUrls: c.media_urls || [],
     results: (c.competition_results || []).map(r => ({
       apparatus: r.apparatus,
       score: parseFloat(r.score),
@@ -122,6 +128,12 @@ async function saveCompetition(comp) {
     date: comp.date, organisation: comp.organisation,
     level: comp.level, notes: comp.notes || '',
     gymnast_id: gid(),
+    org_id:           comp.orgId || null,
+    level_id:         comp.levelId || null,
+    tier:             comp.tier || 'local',
+    field_size:       comp.fieldSize || null,
+    overall_position: comp.overallPosition || null,
+    age_category_id:  comp.ageCategoryId || null,
   });
   if (compErr) { console.error('saveCompetition:', compErr); return; }
 
@@ -246,9 +258,15 @@ async function saveRecurringSessions(rule) {
 
 // Upload a photo to Supabase Storage, return public URL
 async function uploadSessionPhoto(sessionId, file) {
-  const ext  = file.name.split('.').pop();
-  const path = `${sessionId}/${uid()}.${ext}`;
-  const { error } = await db.storage.from('session-photos').upload(path, file, { upsert: true });
+  // Compress before upload if compressImage is available (defined in competitions.js)
+  let blob = file;
+  if (typeof compressImage === 'function') {
+    try { blob = await compressImage(file, 1080, 0.82); } catch(e) { /* use original */ }
+  }
+  const path = `${sessionId}/${uid()}.jpg`;
+  const { error } = await db.storage.from('session-photos').upload(path, blob, {
+    upsert: true, contentType: 'image/jpeg',
+  });
   if (error) { console.error('uploadSessionPhoto:', error); return null; }
   const { data } = db.storage.from('session-photos').getPublicUrl(path);
   return data.publicUrl;
@@ -394,8 +412,66 @@ async function migrateFromLocalStorage() {
   return count;
 }
 
+// ── Organisations & levels ─────────────────
+async function getOrganisations() {
+  const { data, error } = await db.from('organisations').select('*, org_levels(*)').order('name');
+  if (error) { console.error('getOrganisations:', error); return []; }
+  return (data || []).map(o => ({
+    id: o.id, name: o.name, scoreMax: o.score_max,
+    apparatus: o.apparatus || ['Floor','Vault','Bars','Beam'],
+    levels: (o.org_levels || [])
+      .filter(l => l.is_active)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(l => ({ id: l.id, name: l.name, sortOrder: l.sort_order })),
+  }));
+}
+
+async function getGymnastLevels(gymnastId) {
+  const id = gymnastId || gid();
+  if (!id) return [];
+  const { data, error } = await db.from('gymnast_org_levels')
+    .select('*, organisations(name), org_levels(name, sort_order)')
+    .eq('gymnast_id', id)
+    .eq('is_current', true);
+  if (error) { console.error('getGymnastLevels:', error); return []; }
+  return (data || []).map(r => ({
+    orgId: r.org_id, orgName: r.organisations?.name,
+    levelId: r.level_id, levelName: r.org_levels?.name,
+    achievedDate: r.achieved_date, notes: r.notes,
+  }));
+}
+
+async function saveGymnastLevel(orgId, levelId, achievedDate, notes = '') {
+  const id = gid();
+  if (!id) return;
+  // Mark previous level for this org as not current
+  await db.from('gymnast_org_levels')
+    .update({ is_current: false })
+    .eq('gymnast_id', id).eq('org_id', orgId).eq('is_current', true);
+  // Insert new current level
+  await db.from('gymnast_org_levels').insert({
+    gymnast_id: id, org_id: orgId, level_id: levelId,
+    achieved_date: achievedDate || new Date().toISOString().slice(0, 10),
+    is_current: true, notes,
+  });
+  // Create a level-up achievement
+  const { data: level } = await db.from('org_levels').select('name').eq('id', levelId).single();
+  const { data: org }   = await db.from('organisations').select('name').eq('id', orgId).single();
+  if (level && org) {
+    await db.from('achievements').insert({
+      id: uid(), kind: 'level', gymnast_id: id,
+      title: `Level Up — ${org.name}!`,
+      detail: level.name,
+      apparatus: null,
+      date: achievedDate || new Date().toISOString().slice(0, 10),
+      is_new: true,
+    });
+  }
+}
+
 const Data = {
   init,
+  getOrganisations, getGymnastLevels, saveGymnastLevel,
   getCompetitions, saveCompetition, deleteCompetition,
   getPersonalBests,
   getSessions, saveSession, deleteSession, deleteRecurringGroup,

@@ -651,6 +651,9 @@ body {
   display: flex; align-items: flex-start; padding-top: 8px;
   flex-shrink: 0;
   box-shadow: 0 -4px 20px rgba(100,60,200,0.07);
+  position: relative;
+  z-index: 50;
+  overflow: visible;
 }
 .tab-item {
   flex: 1; display: flex; flex-direction: column;
@@ -666,6 +669,29 @@ body {
 .tab-item.active .tab-icon-wrap { background: var(--purple-bg); }
 .tab-lbl { font-size: 10px; font-weight: 500; color: var(--text-soft); }
 .tab-item.active .tab-lbl { color: var(--purple); font-weight: 700; }
+
+/* ── Centre FAB tab ── */
+.tab-center {
+  flex: 1.2;
+  margin-top: -22px;
+}
+.tab-center-btn {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--purple) 0%, var(--purple-deep) 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px;
+  box-shadow: 0 4px 16px rgba(84,56,204,0.45), 0 2px 6px rgba(84,56,204,0.25);
+  transition: transform 0.15s, box-shadow 0.15s;
+  border: 3px solid var(--white);
+}
+.tab-center:active .tab-center-btn {
+  transform: scale(0.92);
+  box-shadow: 0 2px 8px rgba(84,56,204,0.3);
+}
+.tab-center .tab-lbl { color: var(--purple); font-weight: 700; }
+.tab-center.active .tab-center-btn {
+  background: linear-gradient(135deg, var(--purple-deep) 0%, #3d2899 100%);
+}
 
 /* ── Charts (CSS-based sparkline) ── */
 .chart-wrap {
@@ -1023,6 +1049,83 @@ body {
   font-size: 11px; font-weight: 600; padding: 2px 8px;
   background: var(--purple-bg); color: var(--purple);
   border-radius: 20px;
+}
+
+/* ── Tier badge ── */
+.tier-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 20px; border: 1.5px solid;
+  letter-spacing: 0.3px; text-transform: uppercase;
+}
+
+/* ── Field context (5th of 24) ── */
+.field-context {
+  font-size: 11px; font-weight: 700; color: var(--purple);
+  margin-top: 3px; white-space: nowrap;
+}
+.comp-pos-text {
+  font-size: 11px; color: var(--purple); font-weight: 600; margin-top: 1px;
+}
+
+/* ── Card section title ── */
+.card-section-title {
+  font-size: 13px; font-weight: 800; color: var(--text-mid);
+  letter-spacing: 0.2px; margin-bottom: 10px;
+}
+
+/* ── DNA mini score ── */
+.ms-val.dna-val { color: var(--text-soft); font-size: 9px; }
+
+/* ── Media grid ── */
+.media-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 4px;
+}
+.media-thumb {
+  aspect-ratio: 1; border-radius: 10px;
+  background: var(--purple-bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  cursor: pointer; position: relative; overflow: hidden;
+  border: 1.5px solid rgba(123,95,255,0.1);
+}
+.media-play {
+  font-size: 24px; color: var(--purple);
+}
+.media-label { font-size: 10px; color: var(--text-soft); margin-top: 4px; }
+.media-del {
+  position: absolute; top: 4px; right: 4px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: rgba(0,0,0,0.5); color: white;
+  font-size: 10px; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2;
+}
+.media-play-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; color: white;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  pointer-events: none;
+}
+
+/* ── Upload progress ── */
+.upload-progress-wrap {
+  margin-top: 10px;
+  background: var(--purple-bg);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.upload-progress-label {
+  font-size: 12px; font-weight: 600; color: var(--text-mid); margin-bottom: 6px;
+}
+.upload-progress-bar-bg {
+  height: 6px; background: rgba(123,95,255,0.15); border-radius: 10px; overflow: hidden;
+}
+.upload-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--purple) 0%, var(--purple-mid) 100%);
+  border-radius: 10px;
+  transition: width 0.3s ease;
 }
 
 /* ── Dashboard athlete header ── */
