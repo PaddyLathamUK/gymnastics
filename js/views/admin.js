@@ -119,6 +119,12 @@ const AdminSections = {
       if (confirm('Sign out?')) { await Auth.logout(); location.reload(); }
     }));
     content.appendChild(card);
+
+    // Version label
+    const ver = el('div', '');
+    ver.style.cssText = 'text-align:center;font-size:11px;color:var(--text-soft);padding:16px 0 4px;';
+    ver.textContent = `v${APP_VERSION} · ${APP_BUILD}`;
+    content.appendChild(ver);
   },
 
   // ── User Management ───────────────────────

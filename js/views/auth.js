@@ -126,6 +126,7 @@ const AuthView = {
       <button class="auth-link" onclick="AuthView._showInviteEntry()">
         I have an invite code
       </button>
+      <div style="text-align:center;font-size:10px;color:var(--text-soft);margin-top:12px;">v${APP_VERSION}</div>
     `;
     document.getElementById('auth-email').focus();
     document.getElementById('auth-password').addEventListener('keydown', e => {
