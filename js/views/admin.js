@@ -154,21 +154,42 @@ const AdminSections = {
     const { data: pgLinks } = await db.from('parent_gymnast')
       .select('parent_id, gymnasts(id, name)');
 
-    const { data: authUsers } = await db.from('profiles')
-      .select('id');
+    const { data: pending } = await db.from('invite_links')
+      .select('id, invitee_name, expires_at')
+      .eq('invite_type', 'parent')
+      .is('used_at', null)
+      .gte('expires_at', new Date().toISOString());
 
     const card = el('div', 'card');
-    if (!parents?.length) {
-      card.innerHTML = `<div class="empty-note">No parents yet. Use Invites to add one.</div>`;
-    } else {
-      parents.forEach(p => {
-        const gymnasts = (pgLinks || []).filter(l => l.parent_id === p.id).map(l => l.gymnasts?.name).filter(Boolean);
-        card.appendChild(adminMenuRow('👨‍👧', p.full_name,
-          gymnasts.length ? gymnasts.join(', ') : 'No gymnasts assigned',
-          () => AdminNav.go('editUser', { userId: p.id, role: 'parent' })
-        ));
-      });
-    }
+    let hasContent = false;
+
+    // Registered parents
+    (parents || []).forEach(p => {
+      const gymnasts = (pgLinks || []).filter(l => l.parent_id === p.id).map(l => l.gymnasts?.name).filter(Boolean);
+      card.appendChild(adminMenuRow('👨‍👧', p.full_name,
+        gymnasts.length ? gymnasts.join(', ') : 'No gymnasts assigned',
+        () => AdminNav.go('editUser', { userId: p.id, role: 'parent' })
+      ));
+      hasContent = true;
+    });
+
+    // Pending invites
+    (pending || []).forEach(inv => {
+      const expires = new Date(inv.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const row = el('div', 'admin-row');
+      row.style.opacity = '0.7';
+      row.innerHTML = `
+        <div class="admin-row-info">
+          <div class="admin-row-title">⏳ ${inv.invitee_name || 'Unnamed'}</div>
+          <div class="admin-row-sub">Invite pending · expires ${expires}</div>
+        </div>
+        <button class="admin-btn delete" onclick="AdminSections.revokeInvite('${inv.id}')">Revoke</button>
+      `;
+      card.appendChild(row);
+      hasContent = true;
+    });
+
+    if (!hasContent) card.innerHTML = `<div class="empty-note">No parents yet. Use Invites to add one.</div>`;
     content.appendChild(card);
 
     const inviteBtn = el('button', 'btn-primary');
@@ -352,18 +373,42 @@ const AdminSections = {
     const { data: sgLinks } = await db.from('gymnast_supporters')
       .select('supporter_id, gymnasts(name)');
 
+    const { data: pending } = await db.from('invite_links')
+      .select('id, invitee_name, expires_at, gymnast_ids')
+      .eq('invite_type', 'supporter')
+      .is('used_at', null)
+      .gte('expires_at', new Date().toISOString());
+
     const card = el('div', 'card');
-    if (!supporters?.length) {
-      card.innerHTML = `<div class="empty-note">No supporters yet.</div>`;
-    } else {
-      supporters.forEach(s => {
-        const gymnasts = (sgLinks || []).filter(l => l.supporter_id === s.id).map(l => l.gymnasts?.name).filter(Boolean);
-        card.appendChild(adminMenuRow('👏', s.full_name,
-          'Following: ' + (gymnasts.join(', ') || '—'),
-          () => AdminNav.go('editUser', { userId: s.id, role: 'supporter' })
-        ));
-      });
-    }
+    let hasContent = false;
+
+    // Registered supporters
+    (supporters || []).forEach(s => {
+      const gymnasts = (sgLinks || []).filter(l => l.supporter_id === s.id).map(l => l.gymnasts?.name).filter(Boolean);
+      card.appendChild(adminMenuRow('👏', s.full_name,
+        'Following: ' + (gymnasts.join(', ') || '—'),
+        () => AdminNav.go('editUser', { userId: s.id, role: 'supporter' })
+      ));
+      hasContent = true;
+    });
+
+    // Pending supporter invites
+    (pending || []).forEach(inv => {
+      const expires = new Date(inv.expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const row = el('div', 'admin-row');
+      row.style.opacity = '0.7';
+      row.innerHTML = `
+        <div class="admin-row-info">
+          <div class="admin-row-title">⏳ ${inv.invitee_name || 'Unnamed'}</div>
+          <div class="admin-row-sub">Invite pending · expires ${expires}</div>
+        </div>
+        <button class="admin-btn delete" onclick="AdminSections.revokeInvite('${inv.id}')">Revoke</button>
+      `;
+      card.appendChild(row);
+      hasContent = true;
+    });
+
+    if (!hasContent) card.innerHTML = `<div class="empty-note">No supporters yet.</div>`;
     content.appendChild(card);
   },
 
@@ -513,6 +558,13 @@ const AdminSections = {
     } else {
       await db.from('gymnast_supporters').insert({ supporter_id: supporterId, gymnast_id: gymnastId, granted_by: Auth.user.id });
     }
+    await AdminNav._render();
+  },
+
+  async revokeInvite(inviteId) {
+    if (!confirm('Revoke this invite? The link will no longer work.')) return;
+    await db.from('invite_links').update({ expires_at: new Date().toISOString() }).eq('id', inviteId);
+    showToast('Invite revoked');
     await AdminNav._render();
   },
 
@@ -721,9 +773,12 @@ const AdminSections = {
         row.innerHTML = `
           <div class="invite-row-info">
             <div class="invite-name">${inv.invitee_name || 'Unnamed'} <span class="invite-type-pill">${typeLabel}</span></div>
-            <div class="invite-expires">Expires ${expires}</div>
+            <div class="invite-expires">Single-use · expires ${expires}</div>
           </div>
-          <button class="admin-btn edit" onclick="copyInvite('${url}', this)">Copy</button>
+          <div style="display:flex;gap:6px;">
+            <button class="admin-btn edit" onclick="copyInvite('${url}', this)">Copy</button>
+            <button class="admin-btn delete" onclick="AdminSections.revokeInvite('${inv.id}')">✕</button>
+          </div>
         `;
         pendingCard.appendChild(row);
       });
