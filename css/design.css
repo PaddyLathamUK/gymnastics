@@ -817,10 +817,18 @@ body {
   to   { transform: rotate(360deg); }
 }
 
-/* ── Admin overlay ── */
+/* ── Admin overlay — covers entire app including tab bar ── */
 .admin-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg);
-  z-index: 100;
+  z-index: 300;
+}
+.admin-overlay.active {
+  display: flex;
   animation: slide-in-right 0.28s cubic-bezier(0.32,0.72,0,1);
 }
 @keyframes slide-in-right {
