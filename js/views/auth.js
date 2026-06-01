@@ -20,6 +20,20 @@ const AuthView = {
   async showAcceptShare(inviteToken) {
     try {
       const invite = await Auth.validateInvite(inviteToken);
+
+      // If already admin or parent, and this is a parent invite — ignore it
+      if (invite.invite_type === 'parent' && (Auth.isAdmin || Auth.isParent)) {
+        history.replaceState({}, '', location.pathname);
+        showToast('You already have an account — no action needed.');
+        return;
+      }
+
+      // If supporter invite but already linked to all those gymnasts — ignore
+      if (invite.invite_type === 'supporter' && !invite.gymnast_ids?.length) {
+        history.replaceState({}, '', location.pathname);
+        return;
+      }
+
       // Get gymnast names from invite
       let gymnNames = [];
       if (invite.gymnast_ids?.length) {
