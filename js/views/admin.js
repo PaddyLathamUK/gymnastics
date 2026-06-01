@@ -35,7 +35,15 @@ const AdminNav = {
       await AdminSections[cur.section]?.(view, cur.params);
     } catch(e) {
       console.error('Admin render error:', e);
-      view.innerHTML += `<div style="padding:20px;color:var(--red);font-size:13px;">Error: ${e.message}</div>`;
+      view.innerHTML = `
+        <div class="nav-bar">
+          <button class="nav-back" onclick="AdminNav.back()">‹ Back</button>
+          <div class="nav-title">Error</div>
+        </div>
+        <div style="padding:24px 20px;">
+          <div style="color:var(--red);font-size:14px;font-weight:600;margin-bottom:16px;">${e.message}</div>
+          <button class="btn-primary" onclick="AdminNav.back()">Go Back</button>
+        </div>`;
     }
   },
 };
@@ -44,7 +52,9 @@ const AdminNav = {
 function adminNav(title, showBack = true) {
   const nav = el('div', 'nav-bar');
   nav.innerHTML = `
-    ${showBack ? `<button class="nav-back" onclick="AdminNav.back()">‹ Back</button>` : ''}
+    ${showBack
+      ? `<button class="nav-back" onclick="AdminNav.back()">‹ Back</button>`
+      : `<button class="nav-back" onclick="closeAdmin()">✕ Close</button>`}
     <div class="nav-title">${title}</div>
   `;
   return nav;
