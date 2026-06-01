@@ -164,16 +164,39 @@ async function chatSend() {
   input.value = '';
   chatAutoResize(input);
 
-  const { error } = await db.from('messages').insert({
+  // Optimistic: show immediately without waiting for realtime
+  const optimistic = {
+    id:          `optimistic-${Date.now()}`,
     gymnast_id:  _chatGymnastId,
     sender_id:   Auth.user.id,
     sender_name: Auth.profile?.full_name || Auth.user.email,
     sender_role: Auth.role || 'parent',
     content,
-  });
+    created_at:  new Date().toISOString(),
+  };
+  _chatMessages.push(optimistic);
+  _renderMessages();
+  _scrollToBottom(false);
+
+  const { data, error } = await db.from('messages').insert({
+    gymnast_id:  optimistic.gymnast_id,
+    sender_id:   optimistic.sender_id,
+    sender_name: optimistic.sender_name,
+    sender_role: optimistic.sender_role,
+    content,
+  }).select().single();
 
   btn.disabled = false;
-  if (error) { console.error('send:', error); input.value = content; }
+  if (error) {
+    console.error('send:', error);
+    input.value = content;
+    _chatMessages = _chatMessages.filter(m => m.id !== optimistic.id);
+    _renderMessages();
+  } else if (data) {
+    // Replace optimistic entry with real row (realtime may also arrive — dedupe it)
+    const idx = _chatMessages.findIndex(m => m.id === optimistic.id);
+    if (idx !== -1) _chatMessages[idx] = data;
+  }
 }
 
 function chatHandleKey(e) {
@@ -207,6 +230,8 @@ function _subscribeRealtime() {
       table: 'messages',
       filter: `gymnast_id=eq.${_chatGymnastId}`,
     }, payload => {
+      // Skip if already present (optimistic insert or duplicate event)
+      if (_chatMessages.some(m => m.id === payload.new.id)) return;
       _chatMessages.push(payload.new);
       _renderMessages();
       if (_chatAtBottom) _scrollToBottom(false);

@@ -79,16 +79,25 @@ function hideLoading(viewId) {
 }
 
 // ── Tab routing ────────────────────────────
-const VIEWS = ['home', 'comps', 'worlds', 'training', 'achievements', 'chat'];
+const VIEWS = ['home', 'training', 'comps', 'chat', 'worlds', 'achievements'];
 let activeView = 'home';
 
 async function switchView(name) {
   if (!VIEWS.includes(name)) return;
+  closeMoreMenu();
   activeView = name;
+
+  // Tab highlights — only the 4 main tabs + more
+  const mainTabs = ['home', 'training', 'comps', 'chat'];
+  mainTabs.forEach(v => {
+    document.getElementById(`tab-${v}`)?.classList.toggle('active', v === name);
+  });
+  // More tab stays highlighted if viewing a "more" section
+  const moreSections = ['worlds', 'achievements'];
+  document.getElementById('tab-more')?.classList.toggle('active', moreSections.includes(name));
 
   VIEWS.forEach(v => {
     document.getElementById(`view-${v}`)?.classList.toggle('active', v === name);
-    document.getElementById(`tab-${v}`)?.classList.toggle('active', v === name);
   });
 
   const renderers = {
@@ -101,6 +110,32 @@ async function switchView(name) {
   };
   await renderers[name]?.();
   if (name === 'chat') _clearChatBadge?.();
+}
+
+// ── More menu ──────────────────────────────
+function openMoreMenu() {
+  const overlay = document.getElementById('more-sheet-overlay');
+  const items   = document.getElementById('more-sheet-items');
+  if (!overlay || !items) return;
+
+  const menuItems = [
+    { icon: '👑', label: 'Awards',    view: 'achievements' },
+    { icon: '✈️', label: 'Next Comp', view: 'worlds' },
+  ];
+
+  items.innerHTML = menuItems.map(m => `
+    <div class="more-menu-row" onclick="switchView('${m.view}')">
+      <span class="more-menu-icon">${m.icon}</span>
+      <span class="more-menu-label">${m.label}</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-soft)" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>
+  `).join('');
+
+  overlay.style.display = 'block';
+}
+
+function closeMoreMenu() {
+  document.getElementById('more-sheet-overlay').style.display = 'none';
 }
 
 // ── Sheet helpers ──────────────────────────
