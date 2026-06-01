@@ -63,13 +63,6 @@ function tickCountdowns() {
   document.querySelectorAll('[data-cd="sec"]').forEach(e  => e.textContent = pad(secs));
 }
 
-// ── Status bar clock ───────────────────────
-function updateClock() {
-  const now = new Date();
-  const t = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  const el = document.getElementById('status-time');
-  if (el) el.textContent = t;
-}
 
 // ── Loading overlay ────────────────────────
 function showLoading(viewId) {
@@ -196,8 +189,6 @@ async function appAfterAuth(inviteToken) {
   }
 
   buildGymnastSwitcher();
-  updateClock();
-  setInterval(updateClock, 10000);
   setInterval(tickCountdowns, 1000);
   await switchView('home');
   tickCountdowns();
