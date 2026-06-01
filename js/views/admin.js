@@ -360,7 +360,6 @@ const AdminSections = {
   // ── Edit any user (admin only) ────────────
   async editUser(view, { userId, role }) {
     const { data: profile } = await db.from('profiles').select('*').eq('id', userId).single();
-    const { data: authUser } = await db.rpc ? null : null; // can't get email client-side
 
     const roleIcon = { admin:'🔐', parent:'👨‍👧', gymnast:'🤸', supporter:'👏' };
     view.appendChild(adminNav(`${roleIcon[role] || '👤'} ${profile?.full_name || 'User'}`));
