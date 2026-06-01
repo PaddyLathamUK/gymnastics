@@ -45,6 +45,9 @@
     <!-- Achievements -->
     <div class="view" id="view-achievements"></div>
 
+    <!-- Chat -->
+    <div class="view" id="view-chat"></div>
+
     <!-- Admin (slides over everything, not a tab) -->
     <div class="view admin-overlay" id="view-admin"></div>
 
@@ -74,6 +77,10 @@
     <div class="tab-item" id="tab-achievements" onclick="switchView('achievements')">
       <div class="tab-icon-wrap">👑</div>
       <div class="tab-lbl">Awards</div>
+    </div>
+    <div class="tab-item" id="tab-chat" onclick="switchView('chat')">
+      <div class="tab-icon-wrap">💬</div>
+      <div class="tab-lbl">Chat</div>
     </div>
   </div>
 
@@ -130,6 +137,7 @@
 <script src="js/views/worlds.js"></script>
 <script src="js/views/achievements.js"></script>
 <script src="js/views/admin.js"></script>
+<script src="js/views/chat.js"></script>
 <script>
   function closeSheetOnBg(e, id) {
     if (e.target === e.currentTarget) closeSheet(id);

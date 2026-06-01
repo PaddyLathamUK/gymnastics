@@ -86,7 +86,7 @@ function hideLoading(viewId) {
 }
 
 // ── Tab routing ────────────────────────────
-const VIEWS = ['home', 'comps', 'worlds', 'training', 'achievements'];
+const VIEWS = ['home', 'comps', 'worlds', 'training', 'achievements', 'chat'];
 let activeView = 'home';
 
 async function switchView(name) {
@@ -104,8 +104,10 @@ async function switchView(name) {
     training:     renderTraining,
     worlds:       renderWorlds,
     achievements: renderAchievements,
+    chat:         renderChat,
   };
   await renderers[name]?.();
+  if (name === 'chat') _clearChatBadge?.();
 }
 
 // ── Sheet helpers ──────────────────────────

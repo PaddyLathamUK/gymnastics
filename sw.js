@@ -5,7 +5,7 @@
    the user to refresh.
 ═══════════════════════════════════════════ */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME    = `gymnastics-${CACHE_VERSION}`;
 
 // Core files to cache for offline use
@@ -64,9 +64,10 @@ self.addEventListener('fetch', event => {
   // Don't intercept Supabase API calls or external CDN
   if (!url.origin.includes(self.location.origin)) return;
 
-  // Network-first for HTML and JS (so updates land quickly)
+  // Network-first for HTML, JS and CSS (so updates land immediately)
   const isAppFile = url.pathname.endsWith('.html')
                  || url.pathname.endsWith('.js')
+                 || url.pathname.endsWith('.css')
                  || url.pathname === '/';
 
   if (isAppFile) {
