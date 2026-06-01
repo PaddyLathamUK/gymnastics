@@ -145,7 +145,8 @@
 
   // ── Service worker registration & update detection ──
   let _swWaiting = null;
-  if ('serviceWorker' in navigator) {
+  // Skip service worker on localhost (dev) to avoid stale cache issues
+  if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
     navigator.serviceWorker.register('/sw.js').then(reg => {
       // New SW waiting to activate = update available
       if (reg.waiting) showUpdateBanner(reg.waiting);

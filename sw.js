@@ -30,12 +30,12 @@ const CORE_FILES = [
   './apple-touch-icon.png',
 ];
 
-// ── Install: cache core files ───────────────
+// ── Install: cache core files & take over immediately ──────
 self.addEventListener('install', event => {
+  // skipWaiting immediately — no more "waiting" state
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(CORE_FILES))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_FILES))
   );
 });
 
