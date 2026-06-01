@@ -99,23 +99,34 @@ const AdminSections = {
     const card = el('div', 'card');
     card.style.padding = '4px 0';
 
+    const svg = {
+      users:    `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+      trophy:   `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4a2 2 0 0 1-2-2V5h4"/><path d="M18 9h2a2 2 0 0 0 2-2V5h-4"/><path d="M6 5h12v5a6 6 0 0 1-12 0V5z"/><path d="M10 19v-3"/><path d="M14 19v-3"/><path d="M8 19h8"/></svg>`,
+      gymnast:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4" r="2"/><path d="M15.5 8.5c.8.5 1.5 1.3 1.5 2.5v2a1 1 0 0 1-1 1h-2l1 5.5a1 1 0 0 1-2 .2L12 16l-1 3.7a1 1 0 0 1-2-.2L10 14H8a1 1 0 0 1-1-1V11c0-1.2.7-2 1.5-2.5L12 7l3.5 1.5z" fill="none"/></svg>`,
+      supporters:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`,
+      invite:   `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+      profile:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+      settings: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+      signout:  `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+    };
+
     if (Auth.isAdmin) {
-      card.appendChild(adminMenuRow('👥', 'User Management', 'Parents, gymnasts, supporters', () => AdminNav.go('userManagement')));
-      card.appendChild(adminMenuRow('🏆', 'Competition Setup', 'Organisations, levels, age categories', () => AdminNav.go('competitionSetup')));
+      card.appendChild(adminMenuRow(svg.users,     'User Management', 'Parents, gymnasts, supporters', () => AdminNav.go('userManagement')));
+      card.appendChild(adminMenuRow(svg.trophy,    'Competition Setup', 'Organisations, levels, age categories', () => AdminNav.go('competitionSetup')));
     }
 
     if (Auth.isAdmin || Auth.isParent) {
-      card.appendChild(adminMenuRow('🤸', 'My Gymnasts', 'Profiles, levels, login setup', () => AdminNav.go('myGymnasts')));
-      card.appendChild(adminMenuRow('👏', 'Supporters', 'Manage who follows your gymnasts', () => AdminNav.go('mySupporters')));
-      card.appendChild(adminMenuRow('✉️', 'Invites', 'Generate invite links', () => AdminNav.go('invites')));
+      card.appendChild(adminMenuRow(svg.gymnast,    'My Gymnasts', 'Profiles, levels, login setup', () => AdminNav.go('myGymnasts')));
+      card.appendChild(adminMenuRow(svg.supporters, 'Supporters', 'Manage who follows your gymnasts', () => AdminNav.go('mySupporters')));
+      card.appendChild(adminMenuRow(svg.invite,     'Invites', 'Generate invite links', () => AdminNav.go('invites')));
     }
 
     if (Auth.isGymnast) {
-      card.appendChild(adminMenuRow('👤', 'My Profile', 'Name, club, levels', () => AdminNav.go('gymnast Profile')));
+      card.appendChild(adminMenuRow(svg.profile, 'My Profile', 'Name, club, levels', () => AdminNav.go('gymnast Profile')));
     }
 
-    card.appendChild(adminMenuRow('⚙️', 'Settings', 'Dates, app configuration', () => AdminNav.go('appSettings')));
-    card.appendChild(adminMenuRow('🔒', 'Sign Out', '', async () => {
+    card.appendChild(adminMenuRow(svg.settings, 'Settings', 'Dates, app configuration', () => AdminNav.go('appSettings')));
+    card.appendChild(adminMenuRow(svg.signout,  'Sign Out', '', async () => {
       if (confirm('Sign out?')) { await Auth.logout(); location.reload(); }
     }));
     content.appendChild(card);
