@@ -144,21 +144,19 @@ const AdminSections = {
     const { data: pgLinks } = await db.from('parent_gymnast')
       .select('parent_id, gymnasts(id, name)');
 
+    const { data: authUsers } = await db.from('profiles')
+      .select('id');
+
     const card = el('div', 'card');
     if (!parents?.length) {
       card.innerHTML = `<div class="empty-note">No parents yet. Use Invites to add one.</div>`;
     } else {
       parents.forEach(p => {
         const gymnasts = (pgLinks || []).filter(l => l.parent_id === p.id).map(l => l.gymnasts?.name).filter(Boolean);
-        const row = el('div', 'admin-row');
-        row.innerHTML = `
-          <div class="admin-row-info">
-            <div class="admin-row-title">👨‍👧 ${p.full_name}</div>
-            <div class="admin-row-sub">${gymnasts.length ? gymnasts.join(', ') : 'No gymnasts assigned'}</div>
-          </div>
-          <button class="admin-btn delete" onclick="AdminSections.removeUser('${p.id}','${p.full_name}')">Remove</button>
-        `;
-        card.appendChild(row);
+        card.appendChild(adminMenuRow('👨‍👧', p.full_name,
+          gymnasts.length ? gymnasts.join(', ') : 'No gymnasts assigned',
+          () => AdminNav.go('editUser', { userId: p.id, role: 'parent' })
+        ));
       });
     }
     content.appendChild(card);
@@ -183,20 +181,15 @@ const AdminSections = {
       .select('gymnast_id, profiles(full_name)');
 
     const card = el('div', 'card');
-    (gymnasts || []).forEach(g => {
-      const parents = (pgLinks || []).filter(l => l.gymnast_id === g.id).map(l => l.profiles?.full_name).filter(Boolean);
-      const row = el('div', 'admin-row');
-      row.innerHTML = `
-        <div class="admin-row-info">
-          <div class="admin-row-title">🤸 ${g.name}</div>
-          <div class="admin-row-sub">${g.club || ''}${parents.length ? ' · Parent: ' + parents.join(', ') : ''}</div>
-          <div class="admin-row-sub">${g.username ? '🔑 ' + g.username : 'No login set up'}</div>
-        </div>
-        <button class="admin-btn edit" onclick="AdminNav.go('editGymnast', {id:'${g.id}'})">Edit</button>
-      `;
-      card.appendChild(row);
-    });
-    if (!gymnasts?.length) card.innerHTML = `<div class="empty-note">No gymnasts yet.</div>`;
+    if (!gymnasts?.length) {
+      card.innerHTML = `<div class="empty-note">No gymnasts yet.</div>`;
+    } else {
+      (gymnasts || []).forEach(g => {
+        const parents = (pgLinks || []).filter(l => l.gymnast_id === g.id).map(l => l.profiles?.full_name).filter(Boolean);
+        const sub = [g.club, parents.length ? 'Parent: ' + parents.join(', ') : '', g.username ? '🔑 ' + g.username : 'No login'].filter(Boolean).join(' · ');
+        card.appendChild(adminMenuRow('🤸', g.name, sub, () => AdminNav.go('editGymnast', { id: g.id })));
+      });
+    }
     content.appendChild(card);
   },
 
@@ -327,13 +320,14 @@ const AdminSections = {
     await AdminNav._render();
   },
 
-  async toggleParentLink(parentId, gymnastId, isLinked) {
+  async toggleParentLink(parentId, gymnastId, isLinked, fromUser = false) {
     if (isLinked) {
       await db.from('parent_gymnast').delete().eq('parent_id', parentId).eq('gymnast_id', gymnastId);
     } else {
       await db.from('parent_gymnast').insert({ parent_id: parentId, gymnast_id: gymnastId });
     }
-    await AdminNav.go('editGymnast', { id: gymnastId });
+    if (fromUser) await AdminNav._render();
+    else await AdminNav.go('editGymnast', { id: gymnastId });
   },
 
   // ── All supporters ────────────────────────
@@ -354,18 +348,163 @@ const AdminSections = {
     } else {
       supporters.forEach(s => {
         const gymnasts = (sgLinks || []).filter(l => l.supporter_id === s.id).map(l => l.gymnasts?.name).filter(Boolean);
-        const row = el('div', 'admin-row');
-        row.innerHTML = `
-          <div class="admin-row-info">
-            <div class="admin-row-title">👏 ${s.full_name}</div>
-            <div class="admin-row-sub">Following: ${gymnasts.join(', ') || '—'}</div>
-          </div>
-          <button class="admin-btn delete" onclick="AdminSections.removeUser('${s.id}','${s.full_name}')">Remove</button>
-        `;
-        card.appendChild(row);
+        card.appendChild(adminMenuRow('👏', s.full_name,
+          'Following: ' + (gymnasts.join(', ') || '—'),
+          () => AdminNav.go('editUser', { userId: s.id, role: 'supporter' })
+        ));
       });
     }
     content.appendChild(card);
+  },
+
+  // ── Edit any user (admin only) ────────────
+  async editUser(view, { userId, role }) {
+    const { data: profile } = await db.from('profiles').select('*').eq('id', userId).single();
+    const { data: authUser } = await db.rpc ? null : null; // can't get email client-side
+
+    const roleIcon = { admin:'🔐', parent:'👨‍👧', gymnast:'🤸', supporter:'👏' };
+    view.appendChild(adminNav(`${roleIcon[role] || '👤'} ${profile?.full_name || 'User'}`));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    // ── Basic details ─────────────────────
+    const detailCard = el('div', 'card');
+    detailCard.innerHTML = `
+      <div class="admin-section-title">👤 Details</div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Full Name</label>
+        <input class="form-input" id="eu-name" value="${profile?.full_name || ''}">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Role</label>
+        <select class="form-select" id="eu-role">
+          ${['parent','supporter','gymnast','admin'].map(r =>
+            `<option value="${r}" ${profile?.role === r ? 'selected' : ''}>${roleIcon[r]} ${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.saveUserDetails('${userId}')">Save Details</button>
+    `;
+    content.appendChild(detailCard);
+
+    // ── Password reset ────────────────────
+    const pwCard = el('div', 'card');
+    pwCard.innerHTML = `
+      <div class="admin-section-title">🔑 Reset Password</div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">New Password</label>
+        <input class="form-input" id="eu-pw" type="password" placeholder="8+ characters">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Confirm Password</label>
+        <input class="form-input" id="eu-pw2" type="password" placeholder="Repeat password">
+      </div>
+      <div id="eu-pw-err" class="auth-error" style="display:none;margin-top:8px;"></div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.resetUserPassword('${userId}')">Reset Password</button>
+    `;
+    content.appendChild(pwCard);
+
+    // ── Gymnast links (for parents) ───────
+    if (role === 'parent') {
+      const { data: allGymnasts } = await db.from('gymnasts').select('id, name').order('name');
+      const { data: pgLinks } = await db.from('parent_gymnast')
+        .select('gymnast_id').eq('parent_id', userId);
+      const linkedIds = (pgLinks || []).map(l => l.gymnast_id);
+
+      const gymCard = el('div', 'card');
+      gymCard.innerHTML = `<div class="admin-section-title">🤸 Linked Gymnasts</div>`;
+      (allGymnasts || []).forEach(g => {
+        const linked = linkedIds.includes(g.id);
+        const row = el('div', 'admin-row');
+        row.innerHTML = `
+          <div class="admin-row-info"><div class="admin-row-title">${g.name}</div></div>
+          <button class="admin-btn ${linked ? 'delete' : 'edit'}"
+            onclick="AdminSections.toggleParentLink('${userId}','${g.id}',${linked},true)">
+            ${linked ? 'Unlink' : 'Link'}
+          </button>
+        `;
+        gymCard.appendChild(row);
+      });
+      content.appendChild(gymCard);
+    }
+
+    // ── Supporter gymnast links ───────────
+    if (role === 'supporter') {
+      const { data: allGymnasts } = await db.from('gymnasts').select('id, name').order('name');
+      const { data: sgLinks } = await db.from('gymnast_supporters')
+        .select('gymnast_id').eq('supporter_id', userId);
+      const linkedIds = (sgLinks || []).map(l => l.gymnast_id);
+
+      const gymCard = el('div', 'card');
+      gymCard.innerHTML = `<div class="admin-section-title">🤸 Following Gymnasts</div>`;
+      (allGymnasts || []).forEach(g => {
+        const linked = linkedIds.includes(g.id);
+        const row = el('div', 'admin-row');
+        row.innerHTML = `
+          <div class="admin-row-info"><div class="admin-row-title">${g.name}</div></div>
+          <button class="admin-btn ${linked ? 'delete' : 'edit'}"
+            onclick="AdminSections.toggleSupporterLink('${userId}','${g.id}',${linked})">
+            ${linked ? 'Unlink' : 'Link'}
+          </button>
+        `;
+        gymCard.appendChild(row);
+      });
+      content.appendChild(gymCard);
+    }
+
+    // ── Danger zone ───────────────────────
+    const dangerCard = el('div', 'card');
+    dangerCard.innerHTML = `<div class="admin-section-title" style="color:var(--red);">⚠️ Danger Zone</div>`;
+    const removeBtn = el('button', 'btn-cancel');
+    removeBtn.style.cssText = 'width:100%;margin-top:10px;color:var(--red);border-color:rgba(255,91,122,0.25);';
+    removeBtn.textContent = `Remove ${profile?.full_name || 'User'}`;
+    removeBtn.onclick = () => AdminSections.removeUser(userId, profile?.full_name || 'this user');
+    dangerCard.appendChild(removeBtn);
+    content.appendChild(dangerCard);
+  },
+
+  async saveUserDetails(userId) {
+    const name = document.getElementById('eu-name')?.value?.trim();
+    const role = document.getElementById('eu-role')?.value;
+    if (!name) return;
+    await db.from('profiles').update({ full_name: name, role }).eq('id', userId);
+    showToast('Saved ✓');
+    await AdminNav._render();
+  },
+
+  async resetUserPassword(userId) {
+    const pw  = document.getElementById('eu-pw')?.value;
+    const pw2 = document.getElementById('eu-pw2')?.value;
+    const err = document.getElementById('eu-pw-err');
+    err.style.display = 'none';
+    if (!pw || pw.length < 8) { err.textContent = 'Password must be at least 8 characters'; err.style.display = 'block'; return; }
+    if (pw !== pw2) { err.textContent = 'Passwords do not match'; err.style.display = 'block'; return; }
+    try {
+      // Use edge function to reset password (same as gymnast password reset)
+      const { data: { session } } = await db.auth.getSession();
+      const resp = await fetch('https://absdbhasbcxfskapwzer.supabase.co/functions/v1/manage-gymnast-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action: 'update_password_by_user_id', user_id: userId, password: pw }),
+      });
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || 'Failed');
+      document.getElementById('eu-pw').value = '';
+      document.getElementById('eu-pw2').value = '';
+      showToast('Password reset ✓');
+    } catch(e) {
+      err.textContent = e.message;
+      err.style.display = 'block';
+    }
+  },
+
+  async toggleSupporterLink(supporterId, gymnastId, isLinked) {
+    if (isLinked) {
+      await db.from('gymnast_supporters').delete().eq('supporter_id', supporterId).eq('gymnast_id', gymnastId);
+    } else {
+      await db.from('gymnast_supporters').insert({ supporter_id: supporterId, gymnast_id: gymnastId, granted_by: Auth.user.id });
+    }
+    await AdminNav._render();
   },
 
   async removeUser(userId, name) {
