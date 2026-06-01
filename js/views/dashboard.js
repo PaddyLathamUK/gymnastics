@@ -12,17 +12,39 @@ async function renderDashboard() {
   ]);
   const latest = comps[0];
 
+  // Role-aware header info
+  const userName   = Auth.profile?.full_name || profile.name;
+  const gymnast    = Auth.gymnast;
+  let subLine      = '';
+  let showLevels   = false;
+
+  if (Auth.isGymnast) {
+    subLine    = profile.club || '';
+    showLevels = true;
+  } else if (Auth.isParent) {
+    subLine    = gymnast ? `Parent of ${gymnast.name}` : 'Parent';
+  } else if (Auth.isSupporter) {
+    subLine    = gymnast ? `Supporter of ${gymnast.name}` : 'Supporter';
+  } else if (Auth.isAdmin) {
+    subLine    = gymnast ? `Admin · ${gymnast.name}` : 'Admin';
+  }
+
   // Athlete header
   const header = el('div', 'dash-header');
   header.innerHTML = `
     <div>
       <div class="greeting">Welcome back 👋</div>
-      <div class="athlete-name">${profile.name}</div>
-      <div class="club-line">${profile.club}</div>
+      <div class="athlete-name">${userName}</div>
+      <div class="club-line">${subLine}</div>
+      ${showLevels ? `
       <div class="level-row">
         <span class="chip chip-purple">USAIGC ${profile.usaigcLevel}</span>
         <span class="chip chip-gold">IGA UK ${profile.igaLevel}</span>
-      </div>
+      </div>` : (gymnast && (Auth.isParent || Auth.isAdmin) ? `
+      <div class="level-row">
+        <span class="chip chip-purple">USAIGC ${gymnast.usaigc_level || ''}</span>
+        <span class="chip chip-gold">IGA UK ${gymnast.iga_level || ''}</span>
+      </div>` : '')}
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
       <div class="avatar">🤸</div>
