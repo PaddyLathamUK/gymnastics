@@ -110,7 +110,7 @@ const Auth = {
                :                                     'supporter';
 
     const { error: profErr } = await db.from('profiles')
-      .insert({ id: userId, full_name: fullName, role });
+      .insert({ id: userId, full_name: fullName, role, email });
     if (profErr) throw profErr;
 
     if (role === 'supporter' && invite.gymnast_ids?.length) {

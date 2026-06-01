@@ -422,12 +422,20 @@ const AdminSections = {
     view.appendChild(scroll);
 
     // ── Basic details ─────────────────────
+    // Get email via security-definer function
+    const { data: emailData } = await db.rpc('get_user_email', { user_id: userId });
+
     const detailCard = el('div', 'card');
     detailCard.innerHTML = `
       <div class="admin-section-title">👤 Details</div>
       <div class="form-group" style="padding:0;margin-top:10px;">
         <label class="form-label">Full Name</label>
         <input class="form-input" id="eu-name" value="${profile?.full_name || ''}">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Login Email</label>
+        <input class="form-input" id="eu-email" type="email" value="${emailData || profile?.email || ''}"
+          placeholder="email@example.com">
       </div>
       <div class="form-group" style="padding:0;margin-top:10px;">
         <label class="form-label">Role</label>
@@ -518,10 +526,22 @@ const AdminSections = {
   },
 
   async saveUserDetails(userId) {
-    const name = document.getElementById('eu-name')?.value?.trim();
-    const role = document.getElementById('eu-role')?.value;
+    const name  = document.getElementById('eu-name')?.value?.trim();
+    const role  = document.getElementById('eu-role')?.value;
+    const email = document.getElementById('eu-email')?.value?.trim();
     if (!name) return;
-    await db.from('profiles').update({ full_name: name, role }).eq('id', userId);
+    await db.from('profiles').update({ full_name: name, role, email }).eq('id', userId);
+    // Update email in auth via edge function if changed
+    if (email) {
+      try {
+        const { data: { session } } = await db.auth.getSession();
+        await fetch('https://absdbhasbcxfskapwzer.supabase.co/functions/v1/manage-gymnast-user', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ action: 'update_email', user_id: userId, email }),
+        });
+      } catch(e) { console.warn('Email update failed:', e); }
+    }
     showToast('Saved ✓');
     await AdminNav._render();
   },
@@ -646,11 +666,26 @@ const AdminSections = {
 
   async saveNewGymnast() {
     const name = document.getElementById('ag-name')?.value?.trim();
-    if (!name) { document.getElementById('ag-error').textContent = 'Please enter a name'; document.getElementById('ag-error').style.display='block'; return; }
-    await Auth.createGymnast(name, document.getElementById('ag-club')?.value?.trim(), document.getElementById('ag-usaigc')?.value, document.getElementById('ag-iga')?.value);
-    showToast(`${name} added ✓`);
-    buildGymnastSwitcher();
-    await AdminNav.go('myGymnasts');
+    const errEl = document.getElementById('ag-error');
+    if (!name) { errEl.textContent = 'Please enter a name'; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none';
+    const btn = document.querySelector('#view-admin .btn-primary');
+    if (btn) { btn.textContent = 'Saving…'; btn.disabled = true; }
+    try {
+      await Auth.createGymnast(
+        name,
+        document.getElementById('ag-club')?.value?.trim(),
+        document.getElementById('ag-usaigc')?.value,
+        document.getElementById('ag-iga')?.value
+      );
+      showToast(`${name} added ✓`);
+      buildGymnastSwitcher();
+      await AdminNav.go('myGymnasts');
+    } catch(e) {
+      errEl.textContent = e.message || 'Failed to create gymnast — try again';
+      errEl.style.display = 'block';
+      if (btn) { btn.textContent = 'Add Gymnast'; btn.disabled = false; }
+    }
   },
 
   // ── Supporters (parent view) ──────────────

@@ -372,7 +372,7 @@ const AuthView = {
       const userId = authData.user.id;
       // Insert profile before session exists (bootstrap RLS policy allows this)
       const { error: profError } = await db.from('profiles')
-        .insert({ id: userId, full_name: 'Admin', role: 'admin' });
+        .insert({ id: userId, full_name: 'Admin', role: 'admin', email });
       if (profError) throw profError;
       // Sign in — requires email confirmation to be OFF in Supabase dashboard
       const { error: loginError } = await db.auth.signInWithPassword({ email, password });
