@@ -238,7 +238,9 @@ function _subscribeRealtime() {
       // Unread badge if not on chat tab
       if (activeView !== 'chat') _showChatBadge();
     })
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log('[chat realtime]', status, err || '');
+    });
 }
 
 function _chatUnsubscribe() {
