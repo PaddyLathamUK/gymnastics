@@ -1,368 +1,1147 @@
-/* ── Admin / Settings View ── */
+/* ═══════════════════════════════════════════
+   ADMIN / SETTINGS — Navigation-based panel
+═══════════════════════════════════════════ */
 
-async function renderAdmin() {
-  const view = document.getElementById('view-admin');
-  view.innerHTML = '';
+// ── Navigation stack ───────────────────────
+const AdminNav = {
+  _stack: [],
 
+  async go(section, params = {}) {
+    this._stack.push({ section, params });
+    await this._render();
+  },
+
+  async back() {
+    this._stack.pop();
+    if (this._stack.length === 0) { closeAdmin(); return; }
+    await this._render();
+  },
+
+  async home() {
+    this._stack = [];
+    await openAdmin();
+  },
+
+  current() {
+    return this._stack[this._stack.length - 1] || null;
+  },
+
+  async _render() {
+    const view = document.getElementById('view-admin');
+    view.innerHTML = '';
+    const cur = this.current();
+    if (!cur) return;
+    try {
+      await AdminSections[cur.section]?.(view, cur.params);
+    } catch(e) {
+      console.error('Admin render error:', e);
+      view.innerHTML += `<div style="padding:20px;color:var(--red);font-size:13px;">Error: ${e.message}</div>`;
+    }
+  },
+};
+
+// ── Section builder helpers ────────────────
+function adminNav(title, showBack = true) {
   const nav = el('div', 'nav-bar');
-  nav.innerHTML = `<button class="nav-back" onclick="closeAdmin()">‹ Back</button><div class="nav-title">Admin</div>`;
-  view.appendChild(nav);
+  nav.innerHTML = `
+    ${showBack ? `<button class="nav-back" onclick="AdminNav.back()">‹ Back</button>` : ''}
+    <div class="nav-title">${title}</div>
+  `;
+  return nav;
+}
 
-  // DEBUG — remove once auth is confirmed working
-  const dbg = el('div', '');
-  dbg.style.cssText = 'padding:8px 16px;font-size:11px;color:var(--text-soft);background:var(--purple-bg);';
-  dbg.textContent = `Logged in as: ${Auth.user?.email || 'not logged in'} | role: ${Auth.role || 'none'} | gymnast: ${Auth.gymnast?.name || 'none'}`;
-  view.appendChild(dbg);
-
-  const scroll = el('div', 'scroll-area');
+function adminScroll() {
+  const scroll  = el('div', 'scroll-area');
   const content = el('div', 'scroll-content');
   scroll.appendChild(content);
-  view.appendChild(scroll);
+  return { scroll, content };
+}
 
-  const [profile, dates, comps, sessions] = await Promise.all([
-    Data.getProfile(),
-    Data.getDates(),
-    Data.getCompetitions(),
-    Data.getSessions(),
-  ]);
+function adminMenuRow(icon, title, sub, onclick) {
+  const row = el('div', 'admin-menu-row');
+  row.innerHTML = `
+    <div class="amr-icon">${icon}</div>
+    <div class="amr-text">
+      <div class="amr-title">${title}</div>
+      ${sub ? `<div class="amr-sub">${sub}</div>` : ''}
+    </div>
+    <div class="amr-chevron">›</div>
+  `;
+  row.onclick = onclick;
+  return row;
+}
 
-  // ── Users (admin only) ───────────────────
-  if (Auth.isAdmin) {
-    content.appendChild(await buildUsersCard());
-    content.appendChild(await buildInvitesCard());
-  }
+// ── Sections ───────────────────────────────
+const AdminSections = {
 
-  // ── Gymnast logins (admin + parent) ──────
-  if (Auth.isAdmin || Auth.isParent) {
-    content.appendChild(await buildGymnastLoginsCard());
-  }
+  // ── Home ─────────────────────────────────
+  async home(view) {
+    view.appendChild(adminNav(Auth.isAdmin ? 'Admin' : 'Settings', false));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
 
-  // ── Profile ──────────────────────────────
-  const profileCard = el('div', 'card');
-  if (Auth.isGymnast) {
-    // Gymnast sees full athletic profile
-    profileCard.innerHTML = `
-      <div class="admin-section-title">👤 My Profile</div>
+    // Debug strip — remove once stable
+    const dbg = el('div', '');
+    dbg.style.cssText = 'padding:6px 16px;font-size:10px;color:var(--text-soft);background:var(--purple-bg);';
+    dbg.textContent = `${Auth.profile?.full_name || Auth.user?.email} · ${Auth.role}`;
+    content.appendChild(dbg);
+
+    const card = el('div', 'card');
+    card.style.padding = '4px 0';
+
+    if (Auth.isAdmin) {
+      card.appendChild(adminMenuRow('👥', 'User Management', 'Parents, gymnasts, supporters', () => AdminNav.go('userManagement')));
+      card.appendChild(adminMenuRow('🏆', 'Competition Setup', 'Organisations, levels, age categories', () => AdminNav.go('competitionSetup')));
+    }
+
+    if (Auth.isAdmin || Auth.isParent) {
+      card.appendChild(adminMenuRow('🤸', 'My Gymnasts', 'Profiles, levels, login setup', () => AdminNav.go('myGymnasts')));
+      card.appendChild(adminMenuRow('👏', 'Supporters', 'Manage who follows your gymnasts', () => AdminNav.go('mySupporters')));
+      card.appendChild(adminMenuRow('✉️', 'Invites', 'Generate invite links', () => AdminNav.go('invites')));
+    }
+
+    if (Auth.isGymnast) {
+      card.appendChild(adminMenuRow('👤', 'My Profile', 'Name, club, levels', () => AdminNav.go('gymnast Profile')));
+    }
+
+    card.appendChild(adminMenuRow('⚙️', 'Settings', 'Dates, app configuration', () => AdminNav.go('appSettings')));
+    card.appendChild(adminMenuRow('🔒', 'Sign Out', '', async () => {
+      if (confirm('Sign out?')) { await Auth.logout(); location.reload(); }
+    }));
+    content.appendChild(card);
+  },
+
+  // ── User Management ───────────────────────
+  async userManagement(view) {
+    view.appendChild(adminNav('User Management'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const card = el('div', 'card');
+    card.style.padding = '4px 0';
+
+    // Load counts
+    const { data: profiles } = await db.from('profiles').select('id, role');
+    const parentCount    = (profiles || []).filter(p => p.role === 'parent').length;
+    const gymnCount      = (profiles || []).filter(p => p.role === 'gymnast').length;
+    const supporterCount = (profiles || []).filter(p => p.role === 'supporter').length;
+
+    card.appendChild(adminMenuRow('👨‍👧', 'Parents', `${parentCount} registered`, () => AdminNav.go('parents')));
+    card.appendChild(adminMenuRow('🤸', 'Gymnasts', `${gymnCount} registered`, () => AdminNav.go('allGymnasts')));
+    card.appendChild(adminMenuRow('👏', 'Supporters', `${supporterCount} registered`, () => AdminNav.go('allSupporters')));
+    content.appendChild(card);
+  },
+
+  // ── Parents list ──────────────────────────
+  async parents(view) {
+    view.appendChild(adminNav('Parents'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const { data: parents } = await db.from('profiles')
+      .select('id, full_name').eq('role', 'parent').order('full_name');
+
+    const { data: pgLinks } = await db.from('parent_gymnast')
+      .select('parent_id, gymnasts(id, name)');
+
+    const card = el('div', 'card');
+    if (!parents?.length) {
+      card.innerHTML = `<div class="empty-note">No parents yet. Use Invites to add one.</div>`;
+    } else {
+      parents.forEach(p => {
+        const gymnasts = (pgLinks || []).filter(l => l.parent_id === p.id).map(l => l.gymnasts?.name).filter(Boolean);
+        const row = el('div', 'admin-row');
+        row.innerHTML = `
+          <div class="admin-row-info">
+            <div class="admin-row-title">👨‍👧 ${p.full_name}</div>
+            <div class="admin-row-sub">${gymnasts.length ? gymnasts.join(', ') : 'No gymnasts assigned'}</div>
+          </div>
+          <button class="admin-btn delete" onclick="AdminSections.removeUser('${p.id}','${p.full_name}')">Remove</button>
+        `;
+        card.appendChild(row);
+      });
+    }
+    content.appendChild(card);
+
+    const inviteBtn = el('button', 'btn-primary');
+    inviteBtn.style.marginTop = '12px';
+    inviteBtn.textContent = '＋ Invite a Parent';
+    inviteBtn.onclick = () => AdminNav.go('invites', { preselect: 'parent' });
+    content.appendChild(inviteBtn);
+  },
+
+  // ── All gymnasts ──────────────────────────
+  async allGymnasts(view) {
+    view.appendChild(adminNav('Gymnasts'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const { data: gymnasts } = await db.from('gymnasts')
+      .select('id, name, club, usaigc_level, user_id, username').order('name');
+
+    const { data: pgLinks } = await db.from('parent_gymnast')
+      .select('gymnast_id, profiles(full_name)');
+
+    const card = el('div', 'card');
+    (gymnasts || []).forEach(g => {
+      const parents = (pgLinks || []).filter(l => l.gymnast_id === g.id).map(l => l.profiles?.full_name).filter(Boolean);
+      const row = el('div', 'admin-row');
+      row.innerHTML = `
+        <div class="admin-row-info">
+          <div class="admin-row-title">🤸 ${g.name}</div>
+          <div class="admin-row-sub">${g.club || ''}${parents.length ? ' · Parent: ' + parents.join(', ') : ''}</div>
+          <div class="admin-row-sub">${g.username ? '🔑 ' + g.username : 'No login set up'}</div>
+        </div>
+        <button class="admin-btn edit" onclick="AdminNav.go('editGymnast', {id:'${g.id}'})">Edit</button>
+      `;
+      card.appendChild(row);
+    });
+    if (!gymnasts?.length) card.innerHTML = `<div class="empty-note">No gymnasts yet.</div>`;
+    content.appendChild(card);
+  },
+
+  // ── Edit gymnast ──────────────────────────
+  async editGymnast(view, { id }) {
+    const { data: g } = await db.from('gymnasts').select('*').eq('id', id).single();
+    const { data: pgLinks } = await db.from('parent_gymnast')
+      .select('parent_id, profiles(full_name)').eq('gymnast_id', id);
+    const { data: parents } = await db.from('profiles').select('id, full_name').eq('role', 'parent').order('full_name');
+
+    view.appendChild(adminNav(g?.name || 'Gymnast'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const linkedParentIds = (pgLinks || []).map(l => l.parent_id);
+
+    const card = el('div', 'card');
+    card.innerHTML = `
+      <div class="admin-section-title">👤 Profile</div>
       <div class="form-group" style="padding:0;margin-top:10px;">
         <label class="form-label">Name</label>
-        <input class="form-input" id="adm-name" value="${profile.name}">
+        <input class="form-input" id="eg-name" value="${g?.name || ''}">
       </div>
       <div class="form-group" style="padding:0;margin-top:10px;">
         <label class="form-label">Club</label>
-        <input class="form-input" id="adm-club" value="${profile.club}">
+        <input class="form-input" id="eg-club" value="${g?.club || ''}">
       </div>
-      <div class="form-group" style="padding:0;margin-top:10px;">
-        <label class="form-label">USAIGC Level</label>
-        <select class="form-select" id="adm-usaigc">
-          ${['Copper 1','Copper 2','Silver 1','Silver 2','Gold 1'].map(l =>
-            `<option ${profile.usaigcLevel === l ? 'selected' : ''}>${l}</option>`
-          ).join('')}
-        </select>
+      <div class="form-row" style="padding:0;margin-top:10px;">
+        <div class="form-group">
+          <label class="form-label">USAIGC Level</label>
+          <select class="form-select" id="eg-usaigc">
+            ${['Copper 1','Copper 2','Silver 1','Silver 2','Gold 1','Gold 2','Platinum'].map(l =>
+              `<option ${g?.usaigc_level === l ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">IGA Level</label>
+          <select class="form-select" id="eg-iga">
+            ${['Level 6','Level 7','Level 8','Level 9','Level 10'].map(l =>
+              `<option ${g?.iga_level === l ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+        </div>
       </div>
-      <div class="form-group" style="padding:0;margin-top:10px;">
-        <label class="form-label">IGA UK Level</label>
-        <select class="form-select" id="adm-iga">
-          ${['Level 6','Level 7','Level 8','Level 9','Level 10'].map(l =>
-            `<option ${profile.igaLevel === l ? 'selected' : ''}>${l}</option>`
-          ).join('')}
-        </select>
-      </div>
-      <button class="btn-primary" style="margin-top:14px;" onclick="saveProfile()">Save Profile</button>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.saveGymnastProfile('${id}')">Save Profile</button>
     `;
-  } else {
-    // Parent / admin sees just their name
-    profileCard.innerHTML = `
-      <div class="admin-section-title">👤 My Profile</div>
+    content.appendChild(card);
+
+    // Parent assignment
+    const parentCard = el('div', 'card');
+    parentCard.innerHTML = `<div class="admin-section-title">👨‍👧 Assigned Parents</div>`;
+    (parents || []).forEach(p => {
+      const linked = linkedParentIds.includes(p.id);
+      const row = el('div', 'admin-row');
+      row.innerHTML = `
+        <div class="admin-row-info"><div class="admin-row-title">${p.full_name}</div></div>
+        <button class="admin-btn ${linked ? 'delete' : 'edit'}"
+          onclick="AdminSections.toggleParentLink('${p.id}','${id}',${linked})">
+          ${linked ? 'Unlink' : 'Link'}
+        </button>
+      `;
+      parentCard.appendChild(row);
+    });
+    content.appendChild(parentCard);
+
+    // Club assignment
+    const clubs = await Data.getClubs();
+    const clubCard = el('div', 'card');
+    clubCard.innerHTML = `
+      <div class="admin-section-title">🏫 Club</div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Club</label>
+        <select class="form-select" id="eg-club-id" onchange="AdminSections.onClubChange('${id}')">
+          <option value="">— No club assigned —</option>
+          ${clubs.map(c => `<option value="${c.id}" ${g?.club_id === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+        </select>
+      </div>
+    `;
+
+    // Club level section
+    const clubLevelWrap = el('div', '');
+    clubLevelWrap.id = `club-level-wrap-${id}`;
+    const selectedClub = clubs.find(c => c.id === (g?.club_id || ''));
+    clubLevelWrap.appendChild(await buildClubLevelSection(id, selectedClub));
+    clubCard.appendChild(clubLevelWrap);
+
+    const saveClubBtn = el('button', 'btn-primary');
+    saveClubBtn.style.marginTop = '12px';
+    saveClubBtn.textContent = 'Save Club';
+    saveClubBtn.onclick = () => AdminSections.saveGymnastClub(id);
+    clubCard.appendChild(saveClubBtn);
+    content.appendChild(clubCard);
+
+    // Login management
+    const loginCard = el('div', 'card');
+    loginCard.innerHTML = `<div class="admin-section-title">🔑 Gymnast Login</div>`;
+    loginCard.appendChild(buildGymnastLoginForm(g));
+    content.appendChild(loginCard);
+  },
+
+  async saveGymnastProfile(id) {
+    await db.from('gymnasts').update({
+      name:         document.getElementById('eg-name')?.value?.trim(),
+      club:         document.getElementById('eg-club')?.value?.trim(),
+      usaigc_level: document.getElementById('eg-usaigc')?.value,
+      iga_level:    document.getElementById('eg-iga')?.value,
+    }).eq('id', id);
+    await Auth._loadGymnasts();
+    showToast('Saved ✓');
+    AdminNav.back();
+  },
+
+  async saveGymnastClub(id) {
+    const clubId      = document.getElementById('eg-club-id')?.value || null;
+    const clubLevelId = document.getElementById(`eg-club-level-${id}`)?.value || null;
+    const levelDate   = document.getElementById(`eg-club-level-date-${id}`)?.value || null;
+
+    // Save club assignment on gymnast
+    await db.from('gymnasts').update({ club_id: clubId || null }).eq('id', id);
+
+    // Save club level if selected — temporarily set gid override
+    if (clubLevelId) {
+      const prevGymnast = Auth.gymnast;
+      Auth.gymnast = { id };
+      await Data.saveGymnastClubLevel(clubLevelId, levelDate);
+      Auth.gymnast = prevGymnast;
+    }
+    showToast('Club saved ✓');
+    await AdminNav._render();
+  },
+
+  async toggleParentLink(parentId, gymnastId, isLinked) {
+    if (isLinked) {
+      await db.from('parent_gymnast').delete().eq('parent_id', parentId).eq('gymnast_id', gymnastId);
+    } else {
+      await db.from('parent_gymnast').insert({ parent_id: parentId, gymnast_id: gymnastId });
+    }
+    await AdminNav.go('editGymnast', { id: gymnastId });
+  },
+
+  // ── All supporters ────────────────────────
+  async allSupporters(view) {
+    view.appendChild(adminNav('Supporters'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const { data: supporters } = await db.from('profiles')
+      .select('id, full_name').eq('role', 'supporter').order('full_name');
+
+    const { data: sgLinks } = await db.from('gymnast_supporters')
+      .select('supporter_id, gymnasts(name)');
+
+    const card = el('div', 'card');
+    if (!supporters?.length) {
+      card.innerHTML = `<div class="empty-note">No supporters yet.</div>`;
+    } else {
+      supporters.forEach(s => {
+        const gymnasts = (sgLinks || []).filter(l => l.supporter_id === s.id).map(l => l.gymnasts?.name).filter(Boolean);
+        const row = el('div', 'admin-row');
+        row.innerHTML = `
+          <div class="admin-row-info">
+            <div class="admin-row-title">👏 ${s.full_name}</div>
+            <div class="admin-row-sub">Following: ${gymnasts.join(', ') || '—'}</div>
+          </div>
+          <button class="admin-btn delete" onclick="AdminSections.removeUser('${s.id}','${s.full_name}')">Remove</button>
+        `;
+        card.appendChild(row);
+      });
+    }
+    content.appendChild(card);
+  },
+
+  async removeUser(userId, name) {
+    if (!confirm(`Remove ${name}? This cannot be undone.`)) return;
+    // Remove from profiles (cascade handles links)
+    await db.from('gymnast_supporters').delete().eq('supporter_id', userId);
+    await db.from('parent_gymnast').delete().eq('parent_id', userId);
+    await db.from('profiles').delete().eq('id', userId);
+    // Also delete auth user via edge function would be ideal but for now just remove profile
+    showToast(`${name} removed`);
+    await AdminNav._render();
+  },
+
+  // ── My gymnasts (parent view) ─────────────
+  async myGymnasts(view) {
+    view.appendChild(adminNav('My Gymnasts'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const gymnasts = Auth.gymnasts;
+    if (!gymnasts.length) {
+      const empty = el('div', 'card');
+      empty.innerHTML = `<div class="empty-note">No gymnasts yet. Add one below.</div>`;
+      content.appendChild(empty);
+    } else {
+      gymnasts.forEach(g => {
+        const card = el('div', 'card');
+        card.style.padding = '0';
+        card.appendChild(adminMenuRow('🤸', g.name, `${g.club || ''} · ${g.usaigc_level || ''}`, () => AdminNav.go('editGymnast', { id: g.id })));
+        content.appendChild(card);
+      });
+    }
+
+    if (Auth.isAdmin || Auth.isParent) {
+      const addBtn = el('button', 'btn-primary');
+      addBtn.style.marginTop = '12px';
+      addBtn.textContent = '＋ Add Gymnast';
+      addBtn.onclick = () => AdminNav.go('addGymnast');
+      content.appendChild(addBtn);
+    }
+  },
+
+  // ── Add gymnast ───────────────────────────
+  async addGymnast(view) {
+    view.appendChild(adminNav('Add Gymnast'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const card = el('div', 'card');
+    card.innerHTML = `
+      <div class="form-group" style="padding:0;">
+        <label class="form-label">Gymnast Name</label>
+        <input class="form-input" id="ag-name" placeholder="e.g. Emma Smith">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Club</label>
+        <input class="form-input" id="ag-club" value="Star-Tastic Gymnastics">
+      </div>
+      <div class="form-row" style="padding:0;margin-top:10px;">
+        <div class="form-group">
+          <label class="form-label">USAIGC Level</label>
+          <select class="form-select" id="ag-usaigc">
+            ${['Copper 1','Copper 2','Silver 1','Silver 2','Gold 1','Gold 2','Platinum'].map(l => `<option>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">IGA Level</label>
+          <select class="form-select" id="ag-iga">
+            ${['Level 6','Level 7','Level 8','Level 9','Level 10'].map(l => `<option ${l==='Level 8'?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="ag-error" class="auth-error" style="display:none;margin-top:10px;"></div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.saveNewGymnast()">Add Gymnast</button>
+    `;
+    content.appendChild(card);
+  },
+
+  async saveNewGymnast() {
+    const name = document.getElementById('ag-name')?.value?.trim();
+    if (!name) { document.getElementById('ag-error').textContent = 'Please enter a name'; document.getElementById('ag-error').style.display='block'; return; }
+    await Auth.createGymnast(name, document.getElementById('ag-club')?.value?.trim(), document.getElementById('ag-usaigc')?.value, document.getElementById('ag-iga')?.value);
+    showToast(`${name} added ✓`);
+    buildGymnastSwitcher();
+    await AdminNav.go('myGymnasts');
+  },
+
+  // ── Supporters (parent view) ──────────────
+  async mySupporters(view) {
+    view.appendChild(adminNav('Supporters'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const gymnasts = Auth.gymnasts;
+    if (!gymnasts.length) {
+      const c = el('div', 'card');
+      c.innerHTML = `<div class="empty-note">Add a gymnast first before managing supporters.</div>`;
+      content.appendChild(c);
+      return;
+    }
+
+    for (const g of gymnasts) {
+      const { data: links } = await db.from('gymnast_supporters')
+        .select('supporter_id, profiles(full_name, role)').eq('gymnast_id', g.id);
+
+      const card = el('div', 'card');
+      card.innerHTML = `<div class="admin-section-title">🤸 ${g.name}</div>`;
+
+      if (!links?.length) {
+        card.innerHTML += `<div class="empty-note" style="margin:8px 0;">No supporters yet.</div>`;
+      } else {
+        links.forEach(l => {
+          const name = l.profiles?.full_name || 'Unknown';
+          const roleIcon = l.profiles?.role === 'parent' ? '👨‍👧' : '👏';
+          const row = el('div', 'admin-row');
+          row.innerHTML = `
+            <div class="admin-row-info">
+              <div class="admin-row-title">${roleIcon} ${name}</div>
+            </div>
+            <button class="admin-btn delete" onclick="AdminSections.removeSupporter('${l.supporter_id}','${g.id}','${name}')">Remove</button>
+          `;
+          card.appendChild(row);
+        });
+      }
+
+      // Share with another parent button
+      const shareBtn = el('button', 'btn-primary');
+      shareBtn.style.cssText = 'margin-top:10px;width:100%;font-size:13px;padding:10px;';
+      shareBtn.textContent = '🔗 Share with another parent';
+      shareBtn.onclick = () => AdminNav.go('shareGymnast', { gymnastId: g.id, gymnastName: g.name });
+      card.appendChild(shareBtn);
+
+      content.appendChild(card);
+    }
+
+    // Invite new supporter
+    const inviteBtn = el('button', 'btn-primary');
+    inviteBtn.style.cssText = 'margin-top:12px;background:linear-gradient(135deg,var(--purple-mid) 0%,var(--purple) 100%);';
+    inviteBtn.textContent = '＋ Invite a Supporter';
+    inviteBtn.onclick = () => AdminNav.go('invites', { preselect: 'supporter' });
+    content.appendChild(inviteBtn);
+  },
+
+  async removeSupporter(supporterId, gymnastId, name) {
+    if (!confirm(`Remove ${name} as a supporter?`)) return;
+    await db.from('gymnast_supporters').delete()
+      .eq('supporter_id', supporterId).eq('gymnast_id', gymnastId);
+    showToast(`${name} removed`);
+    await AdminNav._render();
+  },
+
+  // ── Share gymnast with another parent ─────
+  async shareGymnast(view, { gymnastId, gymnastName }) {
+    view.appendChild(adminNav(`Share ${gymnastName}`));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const card = el('div', 'card');
+    card.innerHTML = `
+      <div class="admin-section-title">🔗 Share with a Parent</div>
+      <div style="font-size:13px;color:var(--text-soft);margin:8px 0 14px;">
+        Generate a link to share ${gymnastName}'s results with another parent.
+        They accept it using their existing account — no new signup needed.
+      </div>
+      <div class="form-group" style="padding:0;">
+        <label class="form-label">Their Name (optional)</label>
+        <input class="form-input" id="share-name" placeholder="e.g. Emma's Mum">
+      </div>
+      <div id="share-result" style="display:none;margin-top:12px;background:var(--purple-bg);border-radius:12px;padding:12px;font-size:12px;color:var(--text-mid);word-break:break-all;"></div>
+      <button class="btn-primary" style="margin-top:12px;" onclick="AdminSections.generateShareLink('${gymnastId}')">Generate Share Link</button>
+    `;
+    content.appendChild(card);
+  },
+
+  async generateShareLink(gymnastId) {
+    const name = document.getElementById('share-name')?.value?.trim() || 'Parent';
+    const invite = await Auth.createSupporterInvite([gymnastId], name);
+    const url = Auth.inviteUrl(invite.token);
+    const result = document.getElementById('share-result');
+    result.style.display = 'block';
+    result.innerHTML = `<strong>Link ready!</strong><br><br>${url}<br>
+      <button class="admin-btn edit" style="margin-top:8px;width:100%;" onclick="copyInvite('${url}', this)">Copy Link</button>`;
+  },
+
+  // ── Invites ───────────────────────────────
+  async invites(view, { preselect } = {}) {
+    view.appendChild(adminNav('Invites'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    // Pending invites
+    const { data: pending } = await db.from('invite_links')
+      .select('*').is('used_at', null)
+      .gte('expires_at', new Date().toISOString())
+      .order('expires_at', { ascending: true });
+
+    if (pending?.length) {
+      const pendingCard = el('div', 'card');
+      pendingCard.innerHTML = `<div class="admin-section-title">⏳ Pending Invites</div>`;
+      pending.forEach(inv => {
+        const typeLabel = inv.invite_type === 'parent' ? '👨‍👧 Parent' : inv.invite_type === 'gymnast' ? '🤸 Gymnast' : '👏 Supporter';
+        const expires = new Date(inv.expires_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+        const url = Auth.inviteUrl(inv.token);
+        const row = el('div', 'invite-row');
+        row.innerHTML = `
+          <div class="invite-row-info">
+            <div class="invite-name">${inv.invitee_name || 'Unnamed'} <span class="invite-type-pill">${typeLabel}</span></div>
+            <div class="invite-expires">Expires ${expires}</div>
+          </div>
+          <button class="admin-btn edit" onclick="copyInvite('${url}', this)">Copy</button>
+        `;
+        pendingCard.appendChild(row);
+      });
+      content.appendChild(pendingCard);
+    }
+
+    // Generate buttons
+    const genCard = el('div', 'card');
+    genCard.id = 'invites-gen-card';
+    genCard.innerHTML = `<div class="admin-section-title">✉️ New Invite</div>`;
+
+    if (Auth.isAdmin) {
+      const parentBtn = el('button', 'btn-primary');
+      parentBtn.style.cssText = 'width:100%;margin-top:8px;';
+      parentBtn.textContent = '＋ Invite a Parent';
+      parentBtn.onclick = () => showInviteForm('parent', genCard);
+      genCard.appendChild(parentBtn);
+    }
+
+    const gymnBtn = el('button', 'btn-primary');
+    gymnBtn.style.cssText = 'width:100%;margin-top:8px;background:linear-gradient(135deg,#34C97F 0%,#22a866 100%);';
+    gymnBtn.textContent = '＋ Invite a Gymnast';
+    gymnBtn.onclick = () => showInviteForm('gymnast', genCard);
+    genCard.appendChild(gymnBtn);
+
+    // Supporters: only if this user is linked as a parent to at least one gymnast
+    if (Auth.gymnasts.length > 0) {
+      const suppBtn = el('button', 'btn-primary');
+      suppBtn.style.cssText = 'width:100%;margin-top:8px;background:linear-gradient(135deg,var(--purple-mid) 0%,var(--purple) 100%);';
+      suppBtn.textContent = '＋ Invite a Supporter';
+      suppBtn.onclick = () => showInviteForm('supporter', genCard);
+      genCard.appendChild(suppBtn);
+    }
+
+    content.appendChild(genCard);
+
+    // Auto-open form if preselected
+    if (preselect) setTimeout(() => showInviteForm(preselect, genCard), 100);
+  },
+
+  // ── Competition Setup ─────────────────────
+  async competitionSetup(view) {
+    view.appendChild(adminNav('Competition Setup'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const card = el('div', 'card');
+    card.style.padding = '4px 0';
+    card.appendChild(adminMenuRow('🏫', 'Clubs', 'Club profiles and internal level structures', () => AdminNav.go('clubs')));
+    card.appendChild(adminMenuRow('🏅', 'Organisations', 'USAIGC, IGA UK, etc.', () => AdminNav.go('organisations')));
+    card.appendChild(adminMenuRow('📊', 'Age Categories', 'Under 9, 9-10, etc.', () => AdminNav.go('ageCategories')));
+    content.appendChild(card);
+  },
+
+  // ── Clubs list ────────────────────────────
+  async clubs(view) {
+    view.appendChild(adminNav('Clubs'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const clubs = await Data.getClubs();
+    clubs.forEach(c => {
+      const card = el('div', 'card');
+      card.style.padding = '0';
+      card.appendChild(adminMenuRow('🏫', c.name, `${c.levels.length} internal levels`, () => AdminNav.go('clubDetail', { clubId: c.id, clubName: c.name })));
+      content.appendChild(card);
+    });
+
+    const addBtn = el('button', 'btn-primary');
+    addBtn.style.marginTop = '12px';
+    addBtn.textContent = '＋ Add Club';
+    addBtn.onclick = () => AdminNav.go('addClub');
+    content.appendChild(addBtn);
+  },
+
+  // ── Club detail ───────────────────────────
+  async clubDetail(view, { clubId, clubName }) {
+    const clubs = await Data.getClubs();
+    const club  = clubs.find(c => c.id === clubId);
+    view.appendChild(adminNav(clubName));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    // Club info card
+    const infoCard = el('div', 'card');
+    infoCard.innerHTML = `
+      <div class="admin-section-title">🏫 Club Details</div>
       <div class="form-group" style="padding:0;margin-top:10px;">
         <label class="form-label">Name</label>
-        <input class="form-input" id="adm-fullname" value="${Auth.profile?.full_name || ''}">
+        <input class="form-input" id="cd-name" value="${club?.name || ''}">
       </div>
-      <button class="btn-primary" style="margin-top:14px;" onclick="saveUserProfile()">Save</button>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Short Name</label>
+        <input class="form-input" id="cd-short" value="${club?.shortName || ''}" placeholder="e.g. Star-Tastic">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Address</label>
+        <input class="form-input" id="cd-addr" value="${club?.address || ''}" placeholder="Training venue">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Website</label>
+        <input class="form-input" id="cd-web" value="${club?.website || ''}" placeholder="https://...">
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.saveClubDetails('${clubId}')">Save Details</button>
     `;
-  }
-  content.appendChild(profileCard);
+    content.appendChild(infoCard);
 
-  // ── Key Dates ────────────────────────────
-  const datesCard = el('div', 'card');
-  datesCard.innerHTML = `
-    <div class="admin-section-title">📅 Key Dates</div>
-    <div class="form-group" style="padding:0;margin-top:10px;">
-      <label class="form-label">Worlds Date (Orlando)</label>
-      <input class="form-input" id="adm-worlds" type="date" value="${dates.worldsDate}">
-    </div>
-    <div class="form-group" style="padding:0;margin-top:10px;">
-      <label class="form-label">Next Competition Name</label>
-      <input class="form-input" id="adm-nextname" placeholder="e.g. Regional Championships" value="${dates.nextCompName || ''}">
-    </div>
-    <div class="form-group" style="padding:0;margin-top:10px;">
-      <label class="form-label">Next Competition Date</label>
-      <input class="form-input" id="adm-nextdate" type="date" value="${dates.nextCompDate || ''}">
-    </div>
-    <button class="btn-primary" style="margin-top:14px;" onclick="saveDates()">Save Dates</button>
-  `;
-  content.appendChild(datesCard);
+    // Internal levels card
+    const levelsCard = el('div', 'card');
+    levelsCard.innerHTML = `
+      <div class="admin-section-title">🎖️ Internal Levels (low → high)</div>
+      <div style="font-size:12px;color:var(--text-soft);margin-bottom:10px;">
+        These are the club's own training/competing grades — separate from USAIGC or IGA levels.
+      </div>
+    `;
 
-  // ── Competitions ─────────────────────────
-  const compsCard = el('div', 'card');
-  compsCard.innerHTML = `<div class="admin-section-title">📋 Competitions</div>`;
-  if (comps.length === 0) {
-    compsCard.innerHTML += `<div style="font-size:13px;color:var(--text-soft);margin-top:10px;">No competitions yet.</div>`;
-  } else {
-    comps.forEach(comp => {
+    (club?.levels || []).forEach((l, i) => {
       const row = el('div', 'admin-row');
       row.innerHTML = `
         <div class="admin-row-info">
-          <div class="admin-row-title">${comp.name}</div>
-          <div class="admin-row-sub">${Data.formatDateShort(comp.date)} · ${comp.organisation} ${comp.level}</div>
+          <div class="admin-row-title">
+            ${i + 1}. ${l.name}
+            ${l.isCompeting ? '<span class="club-competing-badge">🏆 Competing</span>' : ''}
+          </div>
         </div>
-        <div class="admin-row-actions">
-          <button class="admin-btn edit" onclick="openEditComp('${comp.id}')">Edit</button>
-          <button class="admin-btn delete" onclick="confirmDeleteComp('${comp.id}','${comp.name}')">Delete</button>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="admin-btn edit" title="${l.isCompeting ? 'Remove competing flag' : 'Mark as competing grade'}"
+            onclick="AdminSections.toggleCompeting('${l.id}','${clubId}','${clubName}',${l.isCompeting})">
+            ${l.isCompeting ? '🏆' : '○'}
+          </button>
+          ${i > 0 ? `<button class="admin-btn edit" onclick="AdminSections.moveClubLevel('${l.id}','${clubId}','${clubName}',-1)">↑</button>` : ''}
+          ${i < club.levels.length - 1 ? `<button class="admin-btn edit" onclick="AdminSections.moveClubLevel('${l.id}','${clubId}','${clubName}',1)">↓</button>` : ''}
+          <button class="admin-btn delete" onclick="AdminSections.deleteClubLevel('${l.id}','${l.name}','${clubId}','${clubName}')">✕</button>
         </div>
       `;
-      compsCard.appendChild(row);
+      levelsCard.appendChild(row);
     });
-  }
-  const addCompBtn = el('button', 'btn-primary');
-  addCompBtn.style.marginTop = '12px';
-  addCompBtn.textContent = '＋ Add Competition';
-  addCompBtn.onclick = () => { closeAdmin(); setTimeout(openAddComp, 100); };
-  compsCard.appendChild(addCompBtn);
-  content.appendChild(compsCard);
 
-  // ── Training Sessions ─────────────────────
-  const sessCard = el('div', 'card');
-  sessCard.innerHTML = `<div class="admin-section-title">🤸 Training Sessions</div>`;
-  if (sessions.length === 0) {
-    sessCard.innerHTML += `<div style="font-size:13px;color:var(--text-soft);margin-top:10px;">No sessions logged yet.</div>`;
-  } else {
-    sessions.forEach(sess => {
-      const d = new Date(sess.date + 'T12:00:00');
-      const weekday = d.toLocaleDateString('en-GB', { weekday: 'short' });
+    const addRow = el('div', '');
+    addRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;';
+    addRow.innerHTML = `
+      <input class="form-input" id="new-club-level" placeholder="e.g. A10 or Foundation" style="flex:1;">
+      <button class="btn-primary" style="flex:0 0 auto;padding:0 16px;"
+        onclick="AdminSections.addClubLevel('${clubId}','${clubName}')">Add</button>
+    `;
+    levelsCard.appendChild(addRow);
+    content.appendChild(levelsCard);
+  },
+
+  async saveClubDetails(clubId) {
+    await db.from('clubs').update({
+      name:       document.getElementById('cd-name')?.value?.trim(),
+      short_name: document.getElementById('cd-short')?.value?.trim(),
+      address:    document.getElementById('cd-addr')?.value?.trim(),
+      website:    document.getElementById('cd-web')?.value?.trim(),
+    }).eq('id', clubId);
+    showToast('Saved ✓');
+    const clubs = await Data.getClubs();
+    const club  = clubs.find(c => c.id === clubId);
+    await AdminNav.go('clubDetail', { clubId, clubName: club?.name || '' });
+  },
+
+  async addClubLevel(clubId, clubName) {
+    const name = document.getElementById('new-club-level')?.value?.trim();
+    if (!name) return;
+    const clubs = await Data.getClubs();
+    const club  = clubs.find(c => c.id === clubId);
+    const nextOrder = (club?.levels?.length || 0) + 1;
+    await db.from('club_levels').insert({ club_id: clubId, name, sort_order: nextOrder, is_competing: false });
+    showToast(`${name} added ✓`);
+    await AdminNav.go('clubDetail', { clubId, clubName });
+  },
+
+  async deleteClubLevel(levelId, name, clubId, clubName) {
+    if (!confirm(`Delete level "${name}"?`)) return;
+    await db.from('club_levels').delete().eq('id', levelId);
+    await AdminNav.go('clubDetail', { clubId, clubName });
+  },
+
+  async toggleCompeting(levelId, clubId, clubName, current) {
+    await db.from('club_levels').update({ is_competing: !current }).eq('id', levelId);
+    await AdminNav.go('clubDetail', { clubId, clubName });
+  },
+
+  async moveClubLevel(levelId, clubId, clubName, direction) {
+    const clubs  = await Data.getClubs();
+    const club   = clubs.find(c => c.id === clubId);
+    const levels = club?.levels || [];
+    const idx    = levels.findIndex(l => l.id === levelId);
+    const swap   = idx + direction;
+    if (swap < 0 || swap >= levels.length) return;
+    await db.from('club_levels').update({ sort_order: levels[swap].sortOrder }).eq('id', levelId);
+    await db.from('club_levels').update({ sort_order: levels[idx].sortOrder }).eq('id', levels[swap].id);
+    await AdminNav.go('clubDetail', { clubId, clubName });
+  },
+
+  async addClub(view) {
+    view.appendChild(adminNav('Add Club'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const card = el('div', 'card');
+    card.innerHTML = `
+      <div class="form-group" style="padding:0;">
+        <label class="form-label">Club Name</label>
+        <input class="form-input" id="ac-name" placeholder="e.g. City Gymnastics Club">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Short Name</label>
+        <input class="form-input" id="ac-short" placeholder="e.g. City GC">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Address</label>
+        <input class="form-input" id="ac-addr" placeholder="Training venue address">
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.saveNewClub()">Add Club</button>
+    `;
+    content.appendChild(card);
+  },
+
+  async saveNewClub() {
+    const name = document.getElementById('ac-name')?.value?.trim();
+    if (!name) return;
+    const { data, error } = await db.from('clubs').insert({
+      name,
+      short_name: document.getElementById('ac-short')?.value?.trim() || '',
+      address:    document.getElementById('ac-addr')?.value?.trim() || '',
+    }).select().single();
+    if (error) { showToast('Error: ' + error.message); return; }
+    showToast(`${name} added ✓`);
+    await AdminNav.go('clubDetail', { clubId: data.id, clubName: data.name });
+  },
+
+  // ── Organisations ─────────────────────────
+  async organisations(view) {
+    view.appendChild(adminNav('Organisations'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const orgs = await Data.getOrganisations();
+    orgs.forEach(org => {
+      const card = el('div', 'card');
+      card.style.padding = '0';
+      card.appendChild(adminMenuRow('🏅', org.name, `${org.levels.length} levels · max score ${org.scoreMax}`, () => AdminNav.go('orgDetail', { orgId: org.id, orgName: org.name })));
+      content.appendChild(card);
+    });
+
+    const addBtn = el('button', 'btn-primary');
+    addBtn.style.marginTop = '12px';
+    addBtn.textContent = '＋ Add Organisation';
+    addBtn.onclick = () => AdminNav.go('addOrg');
+    content.appendChild(addBtn);
+  },
+
+  async orgDetail(view, { orgId, orgName }) {
+    view.appendChild(adminNav(orgName));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const orgs = await Data.getOrganisations();
+    const org  = orgs.find(o => o.id === orgId);
+
+    // Levels
+    const levelsCard = el('div', 'card');
+    levelsCard.innerHTML = `<div class="admin-section-title">Levels (low → high)</div>`;
+
+    (org?.levels || []).forEach((l, i) => {
       const row = el('div', 'admin-row');
       row.innerHTML = `
         <div class="admin-row-info">
-          <div class="admin-row-title">${weekday} ${Data.formatDateShort(sess.date)}</div>
-          <div class="admin-row-sub">${Math.floor(sess.durationMins/60)}h${sess.durationMins%60 ? ' '+(sess.durationMins%60)+'m' : ''}${sess.focus.length ? ' · ' + sess.focus.join(', ') : ''}</div>
+          <div class="admin-row-title">${i + 1}. ${l.name}</div>
         </div>
-        <div class="admin-row-actions">
-          <button class="admin-btn edit" onclick="openEditSession('${sess.id}')">Edit</button>
-          <button class="admin-btn delete" onclick="confirmDeleteSession('${sess.id}')">Delete</button>
+        <div style="display:flex;gap:6px;">
+          ${i > 0 ? `<button class="admin-btn edit" onclick="AdminSections.moveLevel('${l.id}','${orgId}',-1)">↑</button>` : ''}
+          ${i < org.levels.length - 1 ? `<button class="admin-btn edit" onclick="AdminSections.moveLevel('${l.id}','${orgId}',1)">↓</button>` : ''}
+          <button class="admin-btn delete" onclick="AdminSections.deleteLevel('${l.id}','${l.name}','${orgId}')">✕</button>
         </div>
       `;
-      sessCard.appendChild(row);
+      levelsCard.appendChild(row);
     });
-  }
-  const addSessBtn = el('button', 'btn-primary');
-  addSessBtn.style.marginTop = '12px';
-  addSessBtn.textContent = '＋ Log Session';
-  addSessBtn.onclick = () => { closeAdmin(); setTimeout(openAddSession, 100); };
-  sessCard.appendChild(addSessBtn);
-  content.appendChild(sessCard);
 
-  // ── Migrate / Danger (admin only) ────────
-  if (!Auth.isAdmin) return; // parents don't need these sections
+    // Add level form
+    const addRow = el('div', '');
+    addRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;';
+    addRow.innerHTML = `
+      <input class="form-input" id="new-level-name" placeholder="e.g. Gold 3" style="flex:1;">
+      <button class="btn-primary" style="flex:0 0 auto;padding:0 16px;" onclick="AdminSections.addLevel('${orgId}')">Add</button>
+    `;
+    levelsCard.appendChild(addRow);
+    content.appendChild(levelsCard);
 
-  // ── Migrate from localStorage ─────────────
-  const migrateCard = el('div', 'card');
-  migrateCard.innerHTML = `
-    <div class="admin-section-title">🔄 Data Migration</div>
-    <div style="font-size:13px;color:var(--text-soft);margin-top:8px;margin-bottom:12px;">
-      If you previously used this app, migrate your local data to the shared database.
+    // Delete org
+    if (org?.levels.length === 0) {
+      const delBtn = el('button', 'btn-cancel');
+      delBtn.style.cssText = 'width:100%;color:var(--red);border-color:rgba(255,91,122,0.2);margin-top:8px;';
+      delBtn.textContent = 'Delete Organisation';
+      delBtn.onclick = async () => {
+        if (confirm(`Delete ${orgName}?`)) {
+          await db.from('organisations').delete().eq('id', orgId);
+          showToast('Deleted');
+          AdminNav.back();
+        }
+      };
+      content.appendChild(delBtn);
+    }
+  },
+
+  async addLevel(orgId) {
+    const name = document.getElementById('new-level-name')?.value?.trim();
+    if (!name) return;
+    const orgs = await Data.getOrganisations();
+    const org  = orgs.find(o => o.id === orgId);
+    const nextOrder = (org?.levels?.length || 0) + 1;
+    await db.from('org_levels').insert({ org_id: orgId, name, sort_order: nextOrder });
+    showToast(`${name} added ✓`);
+    await AdminNav.go('orgDetail', { orgId, orgName: org?.name });
+  },
+
+  async deleteLevel(levelId, name, orgId) {
+    if (!confirm(`Delete level "${name}"? This will affect any competitions tagged to this level.`)) return;
+    await db.from('org_levels').delete().eq('id', levelId);
+    const orgs = await Data.getOrganisations();
+    const org  = orgs.find(o => o.id === orgId);
+    await AdminNav.go('orgDetail', { orgId, orgName: org?.name });
+  },
+
+  async moveLevel(levelId, orgId, direction) {
+    const orgs = await Data.getOrganisations();
+    const org  = orgs.find(o => o.id === orgId);
+    const levels = org?.levels || [];
+    const idx = levels.findIndex(l => l.id === levelId);
+    const swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= levels.length) return;
+    // Swap sort_orders
+    await db.from('org_levels').update({ sort_order: levels[swapIdx].sortOrder }).eq('id', levelId);
+    await db.from('org_levels').update({ sort_order: levels[idx].sortOrder }).eq('id', levels[swapIdx].id);
+    await AdminNav.go('orgDetail', { orgId, orgName: org?.name });
+  },
+
+  async addOrg(view) {
+    view.appendChild(adminNav('Add Organisation'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const card = el('div', 'card');
+    card.innerHTML = `
+      <div class="form-group" style="padding:0;">
+        <label class="form-label">Name</label>
+        <input class="form-input" id="ao-name" placeholder="e.g. British Gymnastics">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Max Score Per Apparatus</label>
+        <input class="form-input" id="ao-score" type="number" step="0.1" value="10.0">
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.saveNewOrg()">Add Organisation</button>
+    `;
+    content.appendChild(card);
+  },
+
+  async saveNewOrg() {
+    const name     = document.getElementById('ao-name')?.value?.trim();
+    const scoreMax = parseFloat(document.getElementById('ao-score')?.value) || 10.0;
+    if (!name) return;
+    await db.from('organisations').insert({ name, score_max: scoreMax });
+    showToast(`${name} added ✓`);
+    await AdminNav.go('organisations');
+  },
+
+  // ── Age categories ────────────────────────
+  async ageCategories(view) {
+    view.appendChild(adminNav('Age Categories'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    const { data: cats } = await db.from('age_categories')
+      .select('*').order('sort_order');
+
+    const card = el('div', 'card');
+    (cats || []).forEach(c => {
+      const range = c.age_min && c.age_max ? `${c.age_min}–${c.age_max}`
+                  : c.age_max ? `Under ${c.age_max + 1}`
+                  : c.age_min ? `${c.age_min}+` : 'Any age';
+      const row = el('div', 'admin-row');
+      row.innerHTML = `
+        <div class="admin-row-info">
+          <div class="admin-row-title">${c.name}</div>
+          <div class="admin-row-sub">${range}</div>
+        </div>
+        <button class="admin-btn delete" onclick="AdminSections.deleteAgeCat('${c.id}','${c.name}')">✕</button>
+      `;
+      card.appendChild(row);
+    });
+
+    const addRow = el('div', '');
+    addRow.style.cssText = 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;';
+    addRow.innerHTML = `
+      <input class="form-input" id="ac-name" placeholder="Name e.g. 11-12" style="flex:2;min-width:80px;">
+      <input class="form-input" id="ac-min" type="number" placeholder="Min age" style="flex:1;min-width:60px;">
+      <input class="form-input" id="ac-max" type="number" placeholder="Max age" style="flex:1;min-width:60px;">
+      <button class="btn-primary" style="flex:0 0 auto;padding:0 14px;" onclick="AdminSections.addAgeCat()">Add</button>
+    `;
+    card.appendChild(addRow);
+    content.appendChild(card);
+  },
+
+  async deleteAgeCat(id, name) {
+    if (!confirm(`Delete "${name}"?`)) return;
+    await db.from('age_categories').delete().eq('id', id);
+    await AdminNav.go('ageCategories');
+  },
+
+  async addAgeCat() {
+    const name   = document.getElementById('ac-name')?.value?.trim();
+    const ageMin = parseInt(document.getElementById('ac-min')?.value) || null;
+    const ageMax = parseInt(document.getElementById('ac-max')?.value) || null;
+    if (!name) return;
+    const { data: existing } = await db.from('age_categories').select('sort_order').order('sort_order', { ascending: false }).limit(1);
+    const nextOrder = (existing?.[0]?.sort_order || 0) + 1;
+    await db.from('age_categories').insert({ name, age_min: ageMin, age_max: ageMax, sort_order: nextOrder });
+    showToast(`${name} added ✓`);
+    await AdminNav.go('ageCategories');
+  },
+
+  // ── App settings ──────────────────────────
+  async appSettings(view) {
+    const dates   = await Data.getDates();
+    const profile = await Data.getProfile();
+
+    view.appendChild(adminNav('Settings'));
+    const { scroll, content } = adminScroll();
+    view.appendChild(scroll);
+
+    // My profile
+    const profileCard = el('div', 'card');
+    if (Auth.isGymnast) {
+      profileCard.innerHTML = `
+        <div class="admin-section-title">👤 My Profile</div>
+        <div class="form-group" style="padding:0;margin-top:10px;">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="adm-name" value="${profile.name}">
+        </div>
+        <div class="form-group" style="padding:0;margin-top:10px;">
+          <label class="form-label">Club</label>
+          <input class="form-input" id="adm-club" value="${profile.club}">
+        </div>
+        <button class="btn-primary" style="margin-top:14px;" onclick="saveProfile()">Save</button>
+      `;
+    } else {
+      profileCard.innerHTML = `
+        <div class="admin-section-title">👤 My Profile</div>
+        <div class="form-group" style="padding:0;margin-top:10px;">
+          <label class="form-label">Name</label>
+          <input class="form-input" id="adm-fullname" value="${Auth.profile?.full_name || ''}">
+        </div>
+        <button class="btn-primary" style="margin-top:14px;" onclick="saveUserProfile()">Save</button>
+      `;
+    }
+    content.appendChild(profileCard);
+
+    // Key dates
+    const datesCard = el('div', 'card');
+    datesCard.innerHTML = `
+      <div class="admin-section-title">📅 Key Dates</div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Worlds Date (Orlando)</label>
+        <input class="form-input" id="adm-worlds" type="date" value="${dates.worldsDate}">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Next Competition Name</label>
+        <input class="form-input" id="adm-nextname" placeholder="e.g. Regional Champs" value="${dates.nextCompName || ''}">
+      </div>
+      <div class="form-group" style="padding:0;margin-top:10px;">
+        <label class="form-label">Next Competition Date</label>
+        <input class="form-input" id="adm-nextdate" type="date" value="${dates.nextCompDate || ''}">
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="saveDates()">Save Dates</button>
+    `;
+    content.appendChild(datesCard);
+
+    // Data migration (admin only)
+    if (Auth.isAdmin) {
+      const migrateCard = el('div', 'card');
+      migrateCard.innerHTML = `
+        <div class="admin-section-title">🔄 Data Migration</div>
+        <div style="font-size:13px;color:var(--text-soft);margin:8px 0 12px;">Migrate old localStorage data to the database.</div>
+      `;
+      const migrateBtn = el('button', 'btn-primary');
+      migrateBtn.textContent = 'Migrate Local Data';
+      migrateBtn.onclick = async () => {
+        migrateBtn.textContent = 'Migrating…'; migrateBtn.disabled = true;
+        const count = await Data.migrateFromLocalStorage();
+        showToast(`Migrated ${count} records ✓`);
+        migrateBtn.textContent = 'Migrate Local Data'; migrateBtn.disabled = false;
+      };
+      migrateCard.appendChild(migrateBtn);
+      content.appendChild(migrateCard);
+
+      // Danger zone
+      const dangerCard = el('div', 'card');
+      dangerCard.innerHTML = `<div class="admin-section-title" style="color:var(--red);">⚠️ Danger Zone</div>`;
+      const resetBtn = el('button', 'btn-cancel');
+      resetBtn.style.cssText = 'width:100%;margin-top:10px;color:var(--red);border-color:rgba(255,91,122,0.25);';
+      resetBtn.textContent = 'Reset All Competition Data';
+      resetBtn.onclick = async () => {
+        if (confirm('Delete ALL competition data? This cannot be undone.')) {
+          await db.from('competition_results').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+          await db.from('competitions').delete().neq('id', 'none');
+          await db.from('training_sessions').delete().neq('id', 'none');
+          await db.from('achievements').delete().neq('id', 'none');
+          showToast('All data reset');
+          renderDashboard();
+        }
+      };
+      dangerCard.appendChild(resetBtn);
+      content.appendChild(dangerCard);
+    }
+  },
+};
+
+// ── Club level section builder ────────────────────────────
+async function buildClubLevelSection(gymnastId, club) {
+  const wrap = el('div', '');
+  if (!club?.levels?.length) return wrap;
+
+  const current = await Data.getGymnastClubLevel(gymnastId);
+
+  wrap.innerHTML = `
+    <div class="form-group" style="padding:0;margin-top:10px;">
+      <label class="form-label">Current Club Level</label>
+      <select class="form-select" id="eg-club-level-${gymnastId}">
+        <option value="">— Not set —</option>
+        ${club.levels.map(l => `
+          <option value="${l.id}" ${current?.levelId === l.id ? 'selected' : ''}>
+            ${l.name}${l.isCompeting ? ' 🏆' : ''}
+          </option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group" style="padding:0;margin-top:8px;">
+      <label class="form-label">Date Achieved</label>
+      <input class="form-input" id="eg-club-level-date-${gymnastId}" type="date"
+        value="${current?.achievedDate || new Date().toISOString().slice(0,10)}">
     </div>
   `;
-  const migrateBtn = el('button', 'btn-primary');
-  migrateBtn.textContent = 'Migrate Local Data to Database';
-  migrateBtn.onclick = async () => {
-    migrateBtn.textContent = 'Migrating…';
-    migrateBtn.disabled = true;
-    try {
-      const count = await Data.migrateFromLocalStorage();
-      showToast(`Migrated ${count} records ✓`);
-      renderAdmin();
-    } catch(e) {
-      showToast('Migration failed — check console');
-      console.error(e);
-    }
-  };
-  migrateCard.appendChild(migrateBtn);
-  content.appendChild(migrateCard);
-
-  // ── Danger zone ───────────────────────────
-  const dangerCard = el('div', 'card');
-  dangerCard.innerHTML = `<div class="admin-section-title" style="color:var(--red);">⚠️ Data</div>`;
-  const resetBtn = el('button', 'btn-cancel');
-  resetBtn.style.cssText = 'width:100%;margin-top:10px;color:var(--red);border-color:rgba(255,91,122,0.25);';
-  resetBtn.textContent = 'Reset All Data';
-  resetBtn.onclick = async () => {
-    if (confirm('This will delete ALL data from the database. Are you sure?')) {
-      await db.from('competition_results').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await db.from('competitions').delete().neq('id', 'none');
-      await db.from('training_sessions').delete().neq('id', 'none');
-      await db.from('achievements').delete().neq('id', 'none');
-      await db.from('worlds_state').update({ vault: false, beam: false }).eq('id', 1);
-      await Data.init();
-      renderAdmin();
-      renderDashboard();
-    }
-  };
-  dangerCard.appendChild(resetBtn);
-  content.appendChild(dangerCard);
+  return wrap;
 }
 
-// ── Profile / Dates save ──────────────────
-async function saveProfile() {
-  await Data.saveProfile({
-    name:        document.getElementById('adm-name')?.value?.trim() || 'Thea Latham',
-    club:        document.getElementById('adm-club')?.value?.trim() || 'Star-Tastic Gymnastics',
-    usaigcLevel: document.getElementById('adm-usaigc')?.value || 'Copper 1',
-    igaLevel:    document.getElementById('adm-iga')?.value || 'Level 8',
-  });
-  await renderDashboard();
-  showToast('Profile saved ✓');
+// Refresh club level dropdown when club changes
+async function onClubChange(gymnastId) {
+  const clubId = document.getElementById('eg-club-id')?.value;
+  const clubs  = await Data.getClubs();
+  const club   = clubs.find(c => c.id === clubId);
+  const wrap   = document.getElementById(`club-level-wrap-${gymnastId}`);
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  wrap.appendChild(await buildClubLevelSection(gymnastId, club));
 }
 
-async function saveUserProfile() {
-  const name = document.getElementById('adm-fullname')?.value?.trim();
-  if (!name) return;
-  await db.from('profiles').update({ full_name: name }).eq('id', Auth.user.id);
-  Auth.profile.full_name = name;
-  showToast('Profile saved ✓');
-}
-
-async function saveDates() {
-  const worldsDate = document.getElementById('adm-worlds')?.value;
-  await Data.saveDates({
-    worldsDate:   worldsDate || '2026-06-27',
-    nextCompName: document.getElementById('adm-nextname')?.value?.trim() || '',
-    nextCompDate: document.getElementById('adm-nextdate')?.value || '',
-  });
-  await renderDashboard();
-  showToast('Dates saved ✓');
-}
-
-// ── Users card ───────────────────────────
-async function buildUsersCard() {
-  const card = el('div', 'card');
-  card.innerHTML = `<div class="admin-section-title">👥 Users</div>`;
-
-  const { data: profiles } = await db.from('profiles')
-    .select('id, full_name, role')
-    .order('role');
-
-  const { data: pgLinks } = await db.from('parent_gymnast')
-    .select('parent_id, gymnasts(name)');
-
-  const { data: sgLinks } = await db.from('gymnast_supporters')
-    .select('supporter_id, gymnasts(name)');
-
-  if (!profiles?.length) {
-    card.innerHTML += `<div style="font-size:13px;color:var(--text-soft);margin-top:10px;">No users yet.</div>`;
-    return card;
-  }
-
-  const roleIcon = { admin: '🔐', parent: '👨‍👧', gymnast: '🤸', supporter: '👏' };
-
-  profiles.forEach(p => {
-    const linked = p.role === 'parent'
-      ? (pgLinks || []).filter(l => l.parent_id === p.id).map(l => l.gymnasts?.name).filter(Boolean)
-      : p.role === 'supporter'
-      ? (sgLinks || []).filter(l => l.supporter_id === p.id).map(l => l.gymnasts?.name).filter(Boolean)
-      : [];
-
-    const row = el('div', 'admin-row');
-    row.innerHTML = `
-      <div class="admin-row-info">
-        <div class="admin-row-title">${roleIcon[p.role] || '👤'} ${p.full_name}</div>
-        <div class="admin-row-sub">${p.role}${linked.length ? ' · ' + linked.join(', ') : ''}</div>
-      </div>
-    `;
-    card.appendChild(row);
-  });
-
-  return card;
-}
-
-// ── Invites card ─────────────────────────
-async function buildInvitesCard() {
-  const card = el('div', 'card');
-  card.id = 'invites-card';
-  card.innerHTML = `<div class="admin-section-title">✉️ Invites</div>`;
-
-  // Pending invites list
-  const { data: pending } = await db.from('invite_links')
-    .select('*')
-    .is('used_at', null)
-    .gte('expires_at', new Date().toISOString())
-    .order('expires_at', { ascending: true });
-
-  if (pending?.length) {
-    const pendingWrap = el('div', '');
-    pendingWrap.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:8px;';
-    pending.forEach(inv => {
-      const typeLabel = inv.invite_type === 'parent' ? '👨‍👧 Parent'
-                      : inv.invite_type === 'gymnast' ? '🤸 Gymnast'
-                      : '👏 Supporter';
-      const expires = new Date(inv.expires_at).toLocaleDateString('en-GB', { day:'numeric', month:'short' });
-      const url = Auth.inviteUrl(inv.token);
-      const row = el('div', 'invite-row');
-      row.innerHTML = `
-        <div class="invite-row-info">
-          <div class="invite-name">${inv.invitee_name || 'Unnamed'} <span class="invite-type-pill">${typeLabel}</span></div>
-          <div class="invite-expires">Expires ${expires}</div>
-        </div>
-        <button class="admin-btn edit" onclick="copyInvite('${url}', this)">Copy</button>
-      `;
-      pendingWrap.appendChild(row);
-    });
-    card.appendChild(pendingWrap);
-  } else {
-    const none = el('div', '');
-    none.style.cssText = 'font-size:13px;color:var(--text-soft);margin-top:8px;margin-bottom:4px;';
-    none.textContent = 'No pending invites.';
-    card.appendChild(none);
-  }
-
-  // Generate invite buttons
-  const btns = el('div', '');
-  btns.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:14px;';
-
-  if (Auth.isAdmin) {
-    const parentBtn = el('button', 'btn-primary');
-    parentBtn.textContent = '＋ Invite a Parent';
-    parentBtn.onclick = () => showInviteForm('parent', card);
-    btns.appendChild(parentBtn);
-  }
-
-  const gymnastBtn = el('button', 'btn-primary');
-  gymnastBtn.style.background = 'linear-gradient(135deg,#34C97F 0%,#22a866 100%)';
-  gymnastBtn.textContent = '＋ Invite a Gymnast';
-  gymnastBtn.onclick = () => showInviteForm('gymnast', card);
-  btns.appendChild(gymnastBtn);
-
-  const supporterBtn = el('button', 'btn-primary');
-  supporterBtn.style.background = 'linear-gradient(135deg,var(--purple-mid) 0%,var(--purple) 100%)';
-  supporterBtn.textContent = '＋ Invite a Supporter';
-  supporterBtn.onclick = () => showInviteForm('supporter', card);
-  btns.appendChild(supporterBtn);
-
-  card.appendChild(btns);
-
-  return card;
-}
-
+// ── Inline invite form (used in invites section) ──────────
 function showInviteForm(type, card) {
-  // Remove any existing form
   card.querySelector('.invite-form')?.remove();
 
   const form = el('div', 'invite-form');
   form.style.cssText = 'margin-top:12px;background:var(--purple-bg);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;';
 
-  const label = type === 'parent'   ? 'Parent name'
-              : type === 'gymnast'  ? 'Gymnast name'
-              :                      'Supporter name';
+  const label = type === 'parent' ? 'Parent name' : type === 'gymnast' ? 'Gymnast name' : 'Supporter name';
 
-  // Gymnast and supporter invites need to be linked to a gymnast
   let gymSelect = '';
   if ((type === 'gymnast' || type === 'supporter') && Auth.gymnasts.length > 0) {
     gymSelect = `
@@ -377,7 +1156,7 @@ function showInviteForm(type, card) {
   form.innerHTML = `
     <div>
       <div class="form-label" style="margin-bottom:4px;">${label}</div>
-      <input class="form-input" id="inv-name" placeholder="e.g. Sarah Jones" style="background:white;">
+      <input class="form-input" id="inv-name" placeholder="Full name" style="background:white;">
     </div>
     ${gymSelect}
     <div style="display:flex;gap:8px;">
@@ -391,28 +1170,21 @@ function showInviteForm(type, card) {
 }
 
 async function generateInvite(type) {
-  const name   = document.getElementById('inv-name')?.value.trim();
-  const gymEl  = document.getElementById('inv-gymnast');
-  const gymId  = gymEl ? gymEl.value : Auth.gymnast?.id;
+  const name  = document.getElementById('inv-name')?.value.trim();
+  const gymId = document.getElementById('inv-gymnast')?.value || Auth.gymnast?.id;
   if (!name) { showToast('Please enter a name'); return; }
-
   try {
     let invite;
-    if (type === 'parent') {
-      invite = await Auth.createParentInvite(name);
-    } else if (type === 'gymnast') {
-      invite = await Auth.createGymnastInvite(gymId, name);
-    } else {
-      invite = await Auth.createSupporterInvite(gymId ? [gymId] : [], name);
-    }
+    if (type === 'parent')        invite = await Auth.createParentInvite(name);
+    else if (type === 'gymnast')  invite = await Auth.createGymnastInvite(gymId, name);
+    else                          invite = await Auth.createSupporterInvite(gymId ? [gymId] : [], name);
+
     const url = Auth.inviteUrl(invite.token);
     const result = document.getElementById('inv-result');
     result.style.display = 'block';
     result.innerHTML = `<strong>Link ready!</strong><br>${url}<br>
       <button class="admin-btn edit" style="margin-top:8px;width:100%;" onclick="copyInvite('${url}', this)">Copy Link</button>`;
     showToast('Invite created ✓');
-    // Refresh the invites card
-    setTimeout(() => renderAdmin(), 300);
   } catch(e) {
     showToast('Failed: ' + e.message);
   }
@@ -429,126 +1201,101 @@ async function copyInvite(url, btn) {
   }
 }
 
-// ── Gymnast logins card ───────────────────
-async function buildGymnastLoginsCard() {
-  const card = el('div', 'card');
-  card.innerHTML = `<div class="admin-section-title">🔑 Gymnast Logins</div>
-    <div style="font-size:13px;color:var(--text-soft);margin-top:4px;margin-bottom:12px;">
-      Set up usernames and passwords so gymnasts can log in themselves.
-    </div>`;
-
-  // Fetch fresh gymnast data including username
-  const ids = Auth.gymnasts.map(g => g.id);
-  if (!ids.length) {
-    card.innerHTML += `<div style="font-size:13px;color:var(--text-soft);">No gymnasts linked yet.</div>`;
-    return card;
-  }
-
-  const { data: gymnasts } = await db.from('gymnasts').select('id, name, username, user_id').in('id', ids);
-  if (!gymnasts?.length) {
-    card.innerHTML += `<div style="font-size:13px;color:var(--text-soft);">No gymnasts found.</div>`;
-    return card;
-  }
-
-  (gymnasts || []).forEach(g => {
-    const hasLogin = !!g.user_id;
-    const row = el('div', 'admin-row');
-    row.style.flexDirection = 'column';
-    row.style.alignItems = 'flex-start';
-    row.style.gap = '10px';
-    row.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
-        <div>
-          <div class="admin-row-title">🤸 ${g.name}</div>
-          <div class="admin-row-sub">${hasLogin ? `Username: <strong>${g.username}</strong>` : 'No login set up yet'}</div>
-        </div>
-        <button class="admin-btn edit" onclick="toggleGymnastLoginForm('${g.id}', ${hasLogin})">
-          ${hasLogin ? 'Change Password' : 'Set Up Login'}
-        </button>
-      </div>
-      <div id="glf-${g.id}" style="display:none;width:100%;background:var(--purple-bg);border-radius:12px;padding:12px;">
-        ${!hasLogin ? `
-        <div class="form-label" style="margin-bottom:4px;">Username</div>
-        <input class="form-input" id="gl-user-${g.id}" placeholder="e.g. thea.latham" style="margin-bottom:10px;background:white;"
-               value="${g.name.toLowerCase().replace(/\s+/g, '.')}">
-        ` : ''}
-        <div class="form-label" style="margin-bottom:4px;">${hasLogin ? 'New Password' : 'Password'}</div>
-        <input class="form-input" id="gl-pass-${g.id}" type="password" placeholder="8+ characters" style="margin-bottom:10px;background:white;">
-        <div class="form-label" style="margin-bottom:4px;">Confirm Password</div>
-        <input class="form-input" id="gl-pass2-${g.id}" type="password" placeholder="Repeat password" style="margin-bottom:10px;background:white;">
-        <div id="gl-err-${g.id}" style="display:none;font-size:13px;color:var(--red);margin-bottom:8px;"></div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn-primary" style="flex:1;padding:10px;" onclick="saveGymnastLogin('${g.id}', ${hasLogin})">Save</button>
-          <button class="btn-cancel" style="flex:0 0 auto;padding:10px 14px;" onclick="document.getElementById('glf-${g.id}').style.display='none'">✕</button>
-        </div>
-      </div>
-    `;
-    card.appendChild(row);
-  });
-
-  return card;
-}
-
-function toggleGymnastLoginForm(gymnastId, hasLogin) {
-  const form = document.getElementById(`glf-${gymnastId}`);
-  form.style.display = form.style.display === 'none' ? 'block' : 'none';
-  if (form.style.display === 'block') {
-    const passEl = document.getElementById(`gl-pass-${gymnastId}`);
-    if (passEl) passEl.focus();
-  }
+// ── Gymnast login form builder (shared) ───────────────────
+function buildGymnastLoginForm(g) {
+  const hasLogin = !!g?.user_id;
+  const wrap = el('div', '');
+  wrap.innerHTML = `
+    <div style="font-size:13px;color:var(--text-soft);margin-bottom:10px;">
+      ${hasLogin ? `Username: <strong>${g.username}</strong>` : 'No login set up yet.'}
+    </div>
+    ${!hasLogin ? `
+    <div class="form-group" style="padding:0;margin-bottom:10px;">
+      <label class="form-label">Username</label>
+      <input class="form-input" id="gl-user-${g.id}" value="${g.name.toLowerCase().replace(/\s+/g, '.')}">
+    </div>` : ''}
+    <div class="form-group" style="padding:0;margin-bottom:10px;">
+      <label class="form-label">${hasLogin ? 'New Password' : 'Password'}</label>
+      <input class="form-input" id="gl-pass-${g.id}" type="password" placeholder="8+ characters">
+    </div>
+    <div class="form-group" style="padding:0;margin-bottom:10px;">
+      <label class="form-label">Confirm Password</label>
+      <input class="form-input" id="gl-pass2-${g.id}" type="password" placeholder="Repeat password">
+    </div>
+    <div id="gl-err-${g.id}" style="display:none;font-size:13px;color:var(--red);margin-bottom:8px;"></div>
+    <button class="btn-primary" onclick="saveGymnastLogin('${g.id}', ${hasLogin})">
+      ${hasLogin ? 'Change Password' : 'Create Login'}
+    </button>
+  `;
+  return wrap;
 }
 
 async function saveGymnastLogin(gymnastId, hasLogin) {
   const usernameEl = document.getElementById(`gl-user-${gymnastId}`);
   const username   = usernameEl?.value.trim();
-  const password   = document.getElementById(`gl-pass-${gymnastId}`).value;
-  const password2  = document.getElementById(`gl-pass2-${gymnastId}`).value;
+  const password   = document.getElementById(`gl-pass-${gymnastId}`)?.value;
+  const password2  = document.getElementById(`gl-pass2-${gymnastId}`)?.value;
   const errEl      = document.getElementById(`gl-err-${gymnastId}`);
 
   errEl.style.display = 'none';
-
   if (!hasLogin && !username) { errEl.textContent = 'Please enter a username'; errEl.style.display = 'block'; return; }
   if (password.length < 8)    { errEl.textContent = 'Password must be at least 8 characters'; errEl.style.display = 'block'; return; }
   if (password !== password2) { errEl.textContent = 'Passwords do not match'; errEl.style.display = 'block'; return; }
 
-  const btn = document.querySelector(`#glf-${gymnastId} .btn-primary`);
-  btn.textContent = 'Saving…';
-  btn.disabled = true;
-
   try {
-    if (hasLogin) {
-      await Auth.updateGymnastPassword(gymnastId, password);
-    } else {
-      await Auth.setupGymnastLogin(gymnastId, username, password);
-    }
+    if (hasLogin) await Auth.updateGymnastPassword(gymnastId, password);
+    else          await Auth.setupGymnastLogin(gymnastId, username, password);
     showToast(hasLogin ? 'Password updated ✓' : 'Login created ✓');
-    document.getElementById(`glf-${gymnastId}`).style.display = 'none';
-    renderAdmin();
+    await AdminNav._render();
   } catch(e) {
     errEl.textContent = e.message || 'Failed — try again';
     errEl.style.display = 'block';
-    btn.textContent = 'Save';
-    btn.disabled = false;
   }
 }
 
-// ── Open / close admin ────────────────────
+// ── Legacy save helpers (called from settings) ────────────
+async function saveProfile() {
+  await Data.saveProfile({
+    name:        document.getElementById('adm-name')?.value?.trim() || '',
+    club:        document.getElementById('adm-club')?.value?.trim() || '',
+    usaigcLevel: document.getElementById('adm-usaigc')?.value || '',
+    igaLevel:    document.getElementById('adm-iga')?.value || '',
+  });
+  await renderDashboard();
+  showToast('Profile saved ✓');
+}
+
+async function saveUserProfile() {
+  const name = document.getElementById('adm-fullname')?.value?.trim();
+  if (!name) return;
+  await db.from('profiles').update({ full_name: name }).eq('id', Auth.user.id);
+  Auth.profile.full_name = name;
+  showToast('Profile saved ✓');
+}
+
+async function saveDates() {
+  await Data.saveDates({
+    worldsDate:   document.getElementById('adm-worlds')?.value || '2026-06-27',
+    nextCompName: document.getElementById('adm-nextname')?.value?.trim() || '',
+    nextCompDate: document.getElementById('adm-nextdate')?.value || '',
+  });
+  await renderDashboard();
+  showToast('Dates saved ✓');
+}
+
+// ── Open / close ──────────────────────────────────────────
 async function openAdmin() {
   document.getElementById('view-admin').classList.add('active');
-  try {
-    await renderAdmin();
-  } catch(e) {
-    console.error('renderAdmin error:', e);
-    const view = document.getElementById('view-admin');
-    view.innerHTML += `<div style="padding:20px;color:var(--red);font-size:13px;">Error loading admin panel: ${e.message}</div>`;
-  }
+  AdminNav._stack = [{ section: 'home', params: {} }];
+  await AdminNav._render();
 }
 
 function closeAdmin() {
   document.getElementById('view-admin').classList.remove('active');
+  AdminNav._stack = [];
 }
 
-// ── Toast ─────────────────────────────────
+// ── Toast ─────────────────────────────────────────────────
 function showToast(msg) {
   let toast = document.getElementById('toast');
   if (!toast) {
@@ -557,7 +1304,7 @@ function showToast(msg) {
     toast.style.cssText = `
       position:fixed;bottom:110px;left:50%;transform:translateX(-50%);
       background:#2D1B69;color:#fff;font-size:13px;font-weight:700;
-      padding:10px 20px;border-radius:20px;z-index:500;
+      padding:10px 20px;border-radius:20px;z-index:9000;
       box-shadow:0 4px 20px rgba(45,27,105,0.4);transition:opacity 0.3s;
     `;
     document.body.appendChild(toast);

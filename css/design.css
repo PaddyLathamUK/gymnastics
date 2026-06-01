@@ -1032,6 +1032,32 @@ body {
   color: var(--white);
 }
 
+/* ── Admin menu rows ── */
+.admin-menu-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 16px; cursor: pointer;
+  border-bottom: 1px solid var(--purple-bg);
+  transition: background 0.1s;
+}
+.admin-menu-row:last-child { border-bottom: none; }
+.admin-menu-row:active { background: var(--purple-bg); }
+.amr-icon { font-size: 22px; width: 32px; text-align: center; flex-shrink: 0; }
+.amr-text { flex: 1; min-width: 0; }
+.amr-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.amr-sub { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
+.amr-chevron { font-size: 20px; color: var(--text-soft); flex-shrink: 0; }
+
+.empty-note {
+  font-size: 13px; color: var(--text-soft);
+  padding: 8px 0; text-align: center;
+}
+.club-competing-badge {
+  font-size: 11px; font-weight: 700;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-dark) 100%);
+  color: white; padding: 2px 8px; border-radius: 20px;
+  margin-left: 6px; vertical-align: middle;
+}
+
 /* ── Invite rows ── */
 .invite-row {
   display: flex;

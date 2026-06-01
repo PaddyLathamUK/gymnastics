@@ -412,6 +412,49 @@ async function migrateFromLocalStorage() {
   return count;
 }
 
+// ── Clubs ──────────────────────────────────
+async function getClubs() {
+  const { data, error } = await db.from('clubs')
+    .select('*, club_levels(*)').order('name');
+  if (error) { console.error('getClubs:', error); return []; }
+  return (data || []).map(c => ({
+    id: c.id, name: c.name, shortName: c.short_name,
+    address: c.address, website: c.website, notes: c.notes,
+    levels: (c.club_levels || [])
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map(l => ({ id: l.id, name: l.name, sortOrder: l.sort_order, isCompeting: l.is_competing, notes: l.notes })),
+  }));
+}
+
+async function getGymnastClubLevel(gymnastId) {
+  const id = gymnastId || gid();
+  if (!id) return null;
+  const { data } = await db.from('gymnast_club_levels')
+    .select('*, club_levels(name, is_competing)')
+    .eq('gymnast_id', id).eq('is_current', true).single();
+  if (!data) return null;
+  return { levelId: data.club_level_id, levelName: data.club_levels?.name, isCompeting: data.club_levels?.is_competing, achievedDate: data.achieved_date, notes: data.notes };
+}
+
+async function saveGymnastClubLevel(clubLevelId, achievedDate, notes = '') {
+  const id = gid();
+  if (!id) return;
+  await db.from('gymnast_club_levels').update({ is_current: false }).eq('gymnast_id', id).eq('is_current', true);
+  await db.from('gymnast_club_levels').insert({ gymnast_id: id, club_level_id: clubLevelId, achieved_date: achievedDate || new Date().toISOString().slice(0, 10), is_current: true, notes });
+  // Club level-up achievement
+  const { data: lvl } = await db.from('club_levels').select('name, clubs(name)').eq('id', clubLevelId).single();
+  if (lvl) {
+    await db.from('achievements').insert({
+      id: uid(), kind: 'level', gymnast_id: id,
+      title: `Club Level Up — ${lvl.name}!`,
+      detail: lvl.clubs?.name || '',
+      apparatus: null,
+      date: achievedDate || new Date().toISOString().slice(0, 10),
+      is_new: true,
+    });
+  }
+}
+
 // ── Organisations & levels ─────────────────
 async function getOrganisations() {
   const { data, error } = await db.from('organisations').select('*, org_levels(*)').order('name');
@@ -471,6 +514,7 @@ async function saveGymnastLevel(orgId, levelId, achievedDate, notes = '') {
 
 const Data = {
   init,
+  getClubs, getGymnastClubLevel, saveGymnastClubLevel,
   getOrganisations, getGymnastLevels, saveGymnastLevel,
   getCompetitions, saveCompetition, deleteCompetition,
   getPersonalBests,

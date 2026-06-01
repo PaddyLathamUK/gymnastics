@@ -163,14 +163,16 @@ async function appInit() {
     return;
   }
 
-  // Clean invite param from URL without reload
-  if (inviteToken) history.replaceState({}, '', location.pathname);
-
-  await appAfterAuth();
+  await appAfterAuth(inviteToken);
 }
 
 // Called after successful login / signup
-async function appAfterAuth() {
+async function appAfterAuth(inviteToken) {
+  // Already logged in but opened an invite link — show accept prompt
+  if (inviteToken) {
+    history.replaceState({}, '', location.pathname);
+    await AuthView.showAcceptShare(inviteToken);
+  }
   // New parent with no gymnasts yet → prompt setup
   if (Auth.isParent && Auth.gymnasts.length === 0) {
     AuthView.showGymnastSetup();

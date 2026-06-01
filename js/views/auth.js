@@ -16,6 +16,61 @@ const AuthView = {
     }
   },
 
+  // Called when already logged in but an invite link was opened
+  async showAcceptShare(inviteToken) {
+    try {
+      const invite = await Auth.validateInvite(inviteToken);
+      // Get gymnast names from invite
+      let gymnNames = [];
+      if (invite.gymnast_ids?.length) {
+        const { data } = await db.from('gymnasts').select('name').in('id', invite.gymnast_ids);
+        gymnNames = (data || []).map(g => g.name);
+      }
+      const overlay = document.getElementById('auth-overlay');
+      overlay.classList.add('active');
+      const body = document.getElementById('auth-body');
+      body.innerHTML = `
+        <div class="auth-logo">🔗</div>
+        <div class="auth-title">Shared Access</div>
+        <div class="auth-sub">You've been invited to follow${gymnNames.length ? ' ' + gymnNames.join(' & ') : ' a gymnast'}</div>
+        <div class="auth-form" style="margin-top:16px;">
+          <div id="auth-error" class="auth-error" style="display:none"></div>
+          <button class="auth-btn" onclick="AuthView._acceptShare('${inviteToken}')">Accept Access</button>
+        </div>
+        <button class="auth-link" onclick="AuthView.hide();history.replaceState({},'',location.pathname)">Dismiss</button>
+      `;
+    } catch(e) {
+      // Invalid invite — just ignore it
+      history.replaceState({}, '', location.pathname);
+    }
+  },
+
+  async _acceptShare(token) {
+    const btn = document.querySelector('.auth-btn');
+    btn.textContent = 'Accepting…'; btn.disabled = true;
+    try {
+      const invite = await Auth.validateInvite(token);
+      const userId = Auth.user.id;
+      if (invite.gymnast_ids?.length) {
+        await db.from('gymnast_supporters').insert(
+          invite.gymnast_ids.map(gid => ({
+            supporter_id: userId, gymnast_id: gid, granted_by: invite.parent_id,
+          }))
+        );
+      }
+      await db.from('invite_links').update({ used_at: new Date().toISOString(), used_by: userId }).eq('id', invite.id);
+      await Auth._loadGymnasts();
+      this.hide();
+      history.replaceState({}, '', location.pathname);
+      buildGymnastSwitcher();
+      showToast('Access granted ✓');
+    } catch(e) {
+      document.getElementById('auth-error').textContent = e.message;
+      document.getElementById('auth-error').style.display = 'block';
+      btn.textContent = 'Accept Access'; btn.disabled = false;
+    }
+  },
+
   hide() {
     document.getElementById('auth-overlay').classList.remove('active');
   },
