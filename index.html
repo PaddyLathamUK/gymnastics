@@ -79,6 +79,15 @@
 
 </div><!-- /app -->
 
+<!-- ═══ UPDATE BANNER ═══ -->
+<div id="update-banner" style="display:none;position:fixed;bottom:96px;left:50%;transform:translateX(-50%);
+  background:#2D1B69;color:#fff;font-size:13px;font-weight:700;padding:11px 20px;border-radius:20px;
+  z-index:9998;box-shadow:0 4px 20px rgba(45,27,105,0.4);display:none;align-items:center;gap:10px;white-space:nowrap;">
+  🆕 Update available
+  <button onclick="applyUpdate()" style="background:var(--gold);color:#2D1B69;border:none;border-radius:10px;
+    padding:4px 12px;font-size:12px;font-weight:800;cursor:pointer;">Refresh</button>
+</div>
+
 <!-- ═══ AUTH OVERLAY ═══ -->
 <div id="auth-overlay">
   <div id="auth-card">
@@ -125,6 +134,35 @@
   function closeSheetOnBg(e, id) {
     if (e.target === e.currentTarget) closeSheet(id);
   }
+
+  // ── Service worker registration & update detection ──
+  let _swWaiting = null;
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // New SW waiting to activate = update available
+      if (reg.waiting) showUpdateBanner(reg.waiting);
+      reg.addEventListener('updatefound', () => {
+        const newSW = reg.installing;
+        newSW.addEventListener('statechange', () => {
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateBanner(newSW);
+          }
+        });
+      });
+    });
+    // When SW activates, reload to get the new version
+    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
+  }
+
+  function showUpdateBanner(sw) {
+    _swWaiting = sw;
+    document.getElementById('update-banner').style.display = 'flex';
+  }
+
+  function applyUpdate() {
+    if (_swWaiting) _swWaiting.postMessage({ type: 'SKIP_WAITING' });
+  }
+
   appInit();
 </script>
 </body>
