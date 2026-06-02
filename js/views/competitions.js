@@ -425,6 +425,11 @@ async function uploadCompVideo(compId, file) {
 
 async function uploadCompPhoto(compId, file) {
   if (!file) return;
+
+  // Show tag picker first
+  const tag = await showPhotoTagPicker();
+  if (!tag) return; // cancelled
+
   showToast('Compressing…');
   try {
     const compressed = await compressImage(file, 1080, 0.82);
@@ -436,6 +441,19 @@ async function uploadCompPhoto(compId, file) {
     if (error) { showToast('Upload failed'); console.error(error); return; }
     const { data } = db.storage.from('comp-media').getPublicUrl(path);
     await saveCompMediaUrl(compId, data.publicUrl);
+
+    // Find comp date for takenAt
+    const comps = await Data.getCompetitions();
+    const comp  = comps.find(c => c.id === compId);
+    await Data.savePhoto({
+      gymnastId: Auth.gymnast?.id,
+      compId,
+      url:       data.publicUrl,
+      category:  tag.category,
+      apparatus: tag.apparatus,
+      takenAt:   comp?.date || null,
+    });
+    showToast('Photo saved');
   } catch(e) {
     showToast('Upload failed');
     console.error(e);

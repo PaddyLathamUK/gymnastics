@@ -79,7 +79,7 @@ function hideLoading(viewId) {
 }
 
 // ── Tab routing ────────────────────────────
-const VIEWS = ['home', 'training', 'comps', 'chat', 'worlds', 'achievements'];
+const VIEWS = ['home', 'training', 'comps', 'chat', 'worlds', 'achievements', 'gallery'];
 let activeView = 'home';
 
 async function switchView(name) {
@@ -93,7 +93,7 @@ async function switchView(name) {
     document.getElementById(`tab-${v}`)?.classList.toggle('active', v === name);
   });
   // More tab stays highlighted if viewing a "more" section
-  const moreSections = ['worlds', 'achievements'];
+  const moreSections = ['worlds', 'achievements', 'gallery'];
   document.getElementById('tab-more')?.classList.toggle('active', moreSections.includes(name));
 
   VIEWS.forEach(v => {
@@ -107,6 +107,7 @@ async function switchView(name) {
     worlds:       renderWorlds,
     achievements: renderAchievements,
     chat:         renderChat,
+    gallery:      renderGallery,
   };
   await renderers[name]?.();
   if (name === 'chat') _clearChatBadge?.();
@@ -119,6 +120,13 @@ function openMoreMenu() {
   if (!overlay || !items) return;
 
   const menuItems = [
+    {
+      label: 'Photos', view: 'gallery',
+      icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>`,
+    },
     {
       label: 'Awards', view: 'achievements',
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -151,6 +159,104 @@ function closeMoreMenu() {
 // ── Sheet helpers ──────────────────────────
 function closeSheet(id) {
   document.getElementById(id)?.classList.remove('open');
+}
+
+// ── Photo tag picker ───────────────────────
+// Shows a bottom sheet to tag a photo before uploading.
+// Returns a promise resolving to { category, apparatus } or null if cancelled.
+function showPhotoTagPicker() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:fixed;inset:0;z-index:500;background:rgba(45,27,105,0.35);display:flex;align-items:flex-end;`;
+
+    overlay.innerHTML = `
+      <div id="tag-sheet" style="width:100%;background:var(--white);border-radius:24px 24px 0 0;padding:16px 20px 32px;">
+        <div style="width:36px;height:4px;background:var(--purple-lt);border-radius:2px;margin:0 auto 20px;"></div>
+        <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:16px;">Tag this photo</div>
+
+        <div style="font-size:12px;font-weight:700;color:var(--text-soft);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Category</div>
+        <div style="display:flex;gap:8px;margin-bottom:20px;">
+          ${['General','Apparatus','Medal'].map(c => `
+            <button class="tag-pick-btn" data-cat="${c.toLowerCase()}"
+              style="flex:1;padding:10px 4px;border-radius:12px;border:2px solid var(--purple-lt);
+                     background:var(--white);font-size:13px;font-weight:700;color:var(--text);cursor:pointer;">
+              ${c === 'General' ? '📷' : c === 'Apparatus' ? '🤸' : '🥇'} ${c}
+            </button>`).join('')}
+        </div>
+
+        <div id="apparatus-row" style="display:none;margin-bottom:20px;">
+          <div style="font-size:12px;font-weight:700;color:var(--text-soft);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Apparatus</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            ${Data.APPARATUS.map(a => `
+              <button class="tag-pick-app" data-app="${a}"
+                style="padding:8px 16px;border-radius:10px;border:2px solid var(--purple-lt);
+                       background:var(--white);font-size:13px;font-weight:600;color:var(--text);cursor:pointer;">
+                ${a}
+              </button>`).join('')}
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;">
+          <button id="tag-cancel-btn" style="flex:1;padding:13px;border-radius:14px;border:2px solid var(--purple-lt);
+            background:var(--white);font-size:15px;font-weight:700;color:var(--text-soft);cursor:pointer;">Cancel</button>
+          <button id="tag-confirm-btn" style="flex:2;padding:13px;border-radius:14px;border:none;
+            background:var(--purple);font-size:15px;font-weight:800;color:white;cursor:pointer;">Add Photo</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    let selectedCat = 'general';
+    let selectedApp = null;
+
+    function highlightCat(cat) {
+      overlay.querySelectorAll('.tag-pick-btn').forEach(b => {
+        const active = b.dataset.cat === cat;
+        b.style.background  = active ? 'var(--purple)' : 'var(--white)';
+        b.style.color       = active ? 'white' : 'var(--text)';
+        b.style.borderColor = active ? 'var(--purple)' : 'var(--purple-lt)';
+      });
+      overlay.querySelector('#apparatus-row').style.display = cat === 'apparatus' ? 'block' : 'none';
+    }
+
+    function highlightApp(app) {
+      overlay.querySelectorAll('.tag-pick-app').forEach(b => {
+        const active = b.dataset.app === app;
+        b.style.background  = active ? 'var(--purple)' : 'var(--white)';
+        b.style.color       = active ? 'white' : 'var(--text)';
+        b.style.borderColor = active ? 'var(--purple)' : 'var(--purple-lt)';
+      });
+    }
+
+    // Default: General selected
+    highlightCat('general');
+
+    overlay.querySelectorAll('.tag-pick-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        selectedCat = b.dataset.cat;
+        if (selectedCat !== 'apparatus') selectedApp = null;
+        highlightCat(selectedCat);
+      });
+    });
+
+    overlay.querySelectorAll('.tag-pick-app').forEach(b => {
+      b.addEventListener('click', () => {
+        selectedApp = b.dataset.app;
+        highlightApp(selectedApp);
+      });
+    });
+
+    overlay.querySelector('#tag-cancel-btn').addEventListener('click', () => {
+      document.body.removeChild(overlay);
+      resolve(null);
+    });
+
+    overlay.querySelector('#tag-confirm-btn').addEventListener('click', () => {
+      document.body.removeChild(overlay);
+      resolve({ category: selectedCat, apparatus: selectedApp });
+    });
+  });
 }
 
 // ── Gymnast switcher (header pill) ─────────

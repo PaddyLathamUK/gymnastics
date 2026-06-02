@@ -207,16 +207,30 @@ async function uploadPhotos(sessionId) {
   const progress = document.getElementById('photo-upload-progress');
   if (!input?.files?.length) return;
 
+  // Show tag picker first
+  const tag = await showPhotoTagPicker();
+  if (!tag) { input.value = ''; return; } // cancelled
+
   progress.style.display = 'block';
 
-  // Get current session
   const sessions = await Data.getSessions();
   const session  = sessions.find(s => s.id === sessionId);
   if (!session) return;
 
   for (const file of input.files) {
     const url = await Data.uploadSessionPhoto(sessionId, file);
-    if (url) session.photoUrls.push(url);
+    if (url) {
+      session.photoUrls.push(url);
+      // Save rich metadata to photos table
+      await Data.savePhoto({
+        gymnastId: session.gymnasticId || Auth.gymnast?.id,
+        sessionId,
+        url,
+        category:  tag.category,
+        apparatus: tag.apparatus,
+        takenAt:   session.date,
+      });
+    }
   }
 
   await Data.saveSession(session);

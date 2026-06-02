@@ -273,9 +273,40 @@ async function uploadSessionPhoto(sessionId, file) {
 }
 
 async function deleteSessionPhoto(sessionId, url) {
-  // Extract path from URL
   const path = url.split('/session-photos/')[1];
   if (path) await db.storage.from('session-photos').remove([path]);
+  // Also remove from photos table
+  await db.from('photos').delete().eq('url', url);
+}
+
+// ── Photos (tagged) ────────────────────────
+async function savePhoto({ gymnastId, sessionId, compId, url, category, apparatus, takenAt }) {
+  const { error } = await db.from('photos').insert({
+    gymnast_id: gymnastId,
+    session_id: sessionId || null,
+    comp_id:    compId    || null,
+    url,
+    category:   category  || 'general',
+    apparatus:  apparatus || null,
+    taken_at:   takenAt   || null,
+  });
+  if (error) console.error('savePhoto:', error);
+}
+
+async function getPhotos({ gymnastId, category, apparatus } = {}) {
+  let q = db.from('photos').select('*').order('created_at', { ascending: false });
+  if (gymnastId) q = q.eq('gymnast_id', gymnastId);
+  if (category)  q = q.eq('category', category);
+  if (apparatus) q = q.eq('apparatus', apparatus);
+  const { data, error } = await q;
+  if (error) { console.error('getPhotos:', error); return []; }
+  return data || [];
+}
+
+async function deletePhoto(id, url, bucket = 'session-photos') {
+  await db.from('photos').delete().eq('id', id);
+  const path = url.split(`/${bucket}/`)[1];
+  if (path) await db.storage.from(bucket).remove([path]);
 }
 
 // ── Achievements ───────────────────────────
@@ -520,6 +551,7 @@ const Data = {
   getPersonalBests,
   getSessions, saveSession, deleteSession, deleteRecurringGroup,
   saveRecurringSessions, uploadSessionPhoto, deleteSessionPhoto,
+  savePhoto, getPhotos, deletePhoto,
   getAchievements, markAchievementSeen,
   getWorldsState, saveWorldsState,
   getProfile, saveProfile,
