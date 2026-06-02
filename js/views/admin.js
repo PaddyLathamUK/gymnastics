@@ -335,6 +335,58 @@ const AdminSections = {
     loginCard.innerHTML = `<div class="admin-section-title">🔑 Gymnast Login</div>`;
     loginCard.appendChild(buildGymnastLoginForm(g));
     content.appendChild(loginCard);
+
+    // Privacy & feature settings
+    const privCard = el('div', 'card');
+    privCard.innerHTML = `
+      <div class="admin-section-title">🔒 Privacy & Features</div>
+      <div class="admin-toggle-row">
+        <div class="admin-toggle-info">
+          <div class="admin-toggle-label">Chat</div>
+          <div class="admin-toggle-sub">Allow messaging between the group</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="priv-chat" ${g?.chat_enabled !== false ? 'checked' : ''}>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="admin-toggle-row">
+        <div class="admin-toggle-info">
+          <div class="admin-toggle-label">Photos</div>
+          <div class="admin-toggle-sub">Allow photo uploads and gallery</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="priv-photos" ${g?.photos_enabled !== false ? 'checked' : ''}>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <div class="admin-toggle-row">
+        <div class="admin-toggle-info">
+          <div class="admin-toggle-label">Private Photos</div>
+          <div class="admin-toggle-sub">Supporters cannot see photos</div>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="priv-private" ${g?.photos_private ? 'checked' : ''}>
+          <span class="toggle-track"></span>
+        </label>
+      </div>
+      <button class="btn-primary" style="margin-top:14px;" onclick="AdminSections.savePrivacySettings('${id}')">Save Settings</button>
+    `;
+    content.appendChild(privCard);
+  },
+
+  async savePrivacySettings(id) {
+    try {
+      await Auth.saveGymnastSettings(id, {
+        chatEnabled:   document.getElementById('priv-chat')?.checked ?? true,
+        photosEnabled: document.getElementById('priv-photos')?.checked ?? true,
+        photosPrivate: document.getElementById('priv-private')?.checked ?? false,
+      });
+      applyGymnastSettings();
+      showToast('Settings saved ✓');
+    } catch(e) {
+      showToast('Error: ' + e.message);
+    }
   },
 
   async saveGymnastProfile(id) {

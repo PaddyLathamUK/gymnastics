@@ -82,7 +82,31 @@ function hideLoading(viewId) {
 const VIEWS = ['home', 'training', 'comps', 'chat', 'worlds', 'achievements', 'gallery'];
 let activeView = 'home';
 
+// Returns current gymnast's privacy settings with safe defaults
+function gymnSettings() {
+  return {
+    chatEnabled:   Auth.gymnast?.chat_enabled   ?? true,
+    photosEnabled: Auth.gymnast?.photos_enabled ?? true,
+    photosPrivate: Auth.gymnast?.photos_private ?? false,
+  };
+}
+
+// Apply settings visibility — called after gymnast loads or settings change
+function applyGymnastSettings() {
+  const s = gymnSettings();
+  const chatTab = document.getElementById('tab-chat');
+  if (chatTab) chatTab.style.display = s.chatEnabled ? '' : 'none';
+  // If currently on a disabled view, redirect home
+  if (!s.chatEnabled   && activeView === 'chat')    switchView('home');
+  if (!s.photosEnabled && activeView === 'gallery') switchView('home');
+}
+
 async function switchView(name) {
+  // Block disabled views
+  const s = gymnSettings();
+  if (name === 'chat'    && !s.chatEnabled)    return;
+  if (name === 'gallery' && !s.photosEnabled)  return;
+
   if (!VIEWS.includes(name)) return;
   closeMoreMenu();
   activeView = name;
@@ -119,14 +143,15 @@ function openMoreMenu() {
   const items   = document.getElementById('more-sheet-items');
   if (!overlay || !items) return;
 
+  const s = gymnSettings();
   const menuItems = [
-    {
+    ...(s.photosEnabled ? [{
       label: 'Photos', view: 'gallery',
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
         <polyline points="21 15 16 10 5 21"/>
       </svg>`,
-    },
+    }] : []),
     {
       label: 'Awards', view: 'achievements',
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -275,6 +300,7 @@ function buildGymnastSwitcher() {
 async function selectGymnast(id) {
   Auth.selectGymnast(id);
   buildGymnastSwitcher();
+  applyGymnastSettings();
   await switchView(activeView);
 }
 
@@ -340,6 +366,7 @@ async function appAfterAuth(inviteToken) {
   }
 
   buildGymnastSwitcher();
+  applyGymnastSettings();
   setInterval(tickCountdowns, 1000);
   await switchView('home');
   tickCountdowns();

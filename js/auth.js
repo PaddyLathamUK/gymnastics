@@ -169,6 +169,30 @@ const Auth = {
     return data;
   },
 
+  // ── Gymnast privacy settings ───────────────
+  async saveGymnastSettings(gymnastId, settings) {
+    const { error } = await db.from('gymnasts')
+      .update({
+        chat_enabled:   settings.chatEnabled,
+        photos_enabled: settings.photosEnabled,
+        photos_private: settings.photosPrivate,
+      })
+      .eq('id', gymnastId);
+    if (error) throw error;
+    // Refresh local cache
+    const g = this.gymnasts.find(g => g.id === gymnastId);
+    if (g) {
+      g.chat_enabled   = settings.chatEnabled;
+      g.photos_enabled = settings.photosEnabled;
+      g.photos_private = settings.photosPrivate;
+    }
+    if (this.gymnast?.id === gymnastId) {
+      this.gymnast.chat_enabled   = settings.chatEnabled;
+      this.gymnast.photos_enabled = settings.photosEnabled;
+      this.gymnast.photos_private = settings.photosPrivate;
+    }
+  },
+
   // ── Gymnast management (parent/admin) ──────
   async createGymnast(name, club, usaigcLevel, igaLevel) {
     const { data, error } = await db.from('gymnasts')
