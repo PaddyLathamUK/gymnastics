@@ -70,7 +70,7 @@ async function renderCoach() {
         <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
         <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
       </svg>
-      Choose video from camera roll
+      <span id="coach-upload-label">Choose video from camera roll</span>
       <input type="file" accept="video/*" style="display:none" onchange="coachLoadVideo(this)">
     </label>
   `;
@@ -99,6 +99,7 @@ async function renderCoach() {
 
   // Phase control button
   const ctrlWrap = el('div', 'coach-ctrl-wrap');
+  ctrlWrap.id = 'coach-ctrl-wrap';
   ctrlWrap.innerHTML = `
     <button class="coach-phase-btn" id="coach-phase-btn" onclick="coachPhaseAction()">▶  Start Attempt</button>
   `;
@@ -177,22 +178,44 @@ async function coachSetMode(mode) {
 async function coachLoadVideo(input) {
   const file = input.files[0];
   if (!file) return;
-  const video = document.getElementById('coach-video');
+  const video  = document.getElementById('coach-video');
+  const canvas = document.getElementById('coach-canvas');
   if (!video) return;
+
+  _coachLoopActive = false;
   _resetPhase();
   const finalEl = document.getElementById('coach-final');
   if (finalEl) finalEl.style.display = 'none';
-  _updatePhaseUI();
+
+  // Show status
+  const lbl = document.getElementById('coach-upload-label');
+  if (lbl) lbl.textContent = 'Analysing…';
+  _updateScoreOverlay('…', 'Analysing video…');
 
   video.srcObject = null;
   video.src = URL.createObjectURL(file);
+  video.muted = true;
   video.load();
   await new Promise(res => { video.onloadedmetadata = res; });
 
-  const canvas = document.getElementById('coach-canvas');
   _initPose(video, canvas);
+
+  // Auto-record all frames while video plays
+  _coachPhase = 'recording';
+  _holdStartTime = Date.now();
   _coachLoopActive = true;
+
+  video.play();
   _runPoseLoop(video);
+
+  // When video ends, auto-show score
+  video.onended = () => {
+    _coachLoopActive = false;
+    _holdElapsed = (Date.now() - _holdStartTime) / 1000;
+    _coachPhase = 'complete';
+    _showFinalScore();
+    if (lbl) lbl.textContent = 'Choose another video';
+  };
 }
 
 // ── Start camera ───────────────────────────
@@ -308,6 +331,8 @@ function _updatePhaseUI() {
     complete:  { label: '↺  Try Again',     badgeText: 'Done',      cls: '' },
   }[_coachPhase];
 
+  const ctrlWrap = document.getElementById('coach-ctrl-wrap');
+  if (ctrlWrap) ctrlWrap.style.display = _coachMode === 'upload' ? 'none' : '';
   if (btn)   { btn.textContent = cfg.label; btn.className = `coach-phase-btn ${cfg.cls}`; }
   if (badge) { badge.textContent = cfg.badgeText; badge.style.display = cfg.badgeText ? 'block' : 'none'; }
   if (timer) { timer.style.display = _coachPhase === 'recording' ? 'block' : 'none'; }
