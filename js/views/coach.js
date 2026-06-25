@@ -256,7 +256,7 @@ function _initPose(video, canvas) {
   });
   _coachPoseInst.setOptions({
     modelComplexity:        1,
-    smoothLandmarks:        true,
+    smoothLandmarks:        _coachMode === 'camera',  // off for upload — seek order breaks smoothing
     enableSegmentation:     false,
     minDetectionConfidence: 0.5,
     minTrackingConfidence:  0.5,
@@ -385,10 +385,10 @@ function _coachOnResults(results, video, canvas) {
 
   const scored = _scoreHandstand(lm);
 
-  // Accumulate samples while recording
-  if (_coachPhase === 'recording') {
+  // Accumulate only inverted, non-voided frames so split is deterministic
+  if (_coachPhase === 'recording' && scored.inverted && !scored.voided) {
     _phaseAll.push(scored);
-    if (scored.inverted) _detectHandWalk(lm);
+    _detectHandWalk(lm);
   }
 
   const phaseLabel = { ready: 'Get into position', recording: 'Recording…', complete: 'Done' }[_coachPhase];
