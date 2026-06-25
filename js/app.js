@@ -79,7 +79,7 @@ function hideLoading(viewId) {
 }
 
 // ── Tab routing ────────────────────────────
-const VIEWS = ['home', 'training', 'comps', 'chat', 'worlds', 'achievements', 'gallery'];
+const VIEWS = ['home', 'training', 'comps', 'chat', 'worlds', 'achievements', 'gallery', 'coach'];
 let activeView = 'home';
 
 // Returns current gymnast's privacy settings with safe defaults
@@ -109,6 +109,7 @@ async function switchView(name) {
 
   if (!VIEWS.includes(name)) return;
   closeMoreMenu();
+  if (activeView === 'coach' && name !== 'coach') _stopCoach?.();
   activeView = name;
 
   // Tab highlights — only the 4 main tabs + more
@@ -117,7 +118,7 @@ async function switchView(name) {
     document.getElementById(`tab-${v}`)?.classList.toggle('active', v === name);
   });
   // More tab stays highlighted if viewing a "more" section
-  const moreSections = ['worlds', 'achievements', 'gallery'];
+  const moreSections = ['worlds', 'achievements', 'gallery', 'coach'];
   document.getElementById('tab-more')?.classList.toggle('active', moreSections.includes(name));
 
   VIEWS.forEach(v => {
@@ -132,6 +133,7 @@ async function switchView(name) {
     achievements: renderAchievements,
     chat:         renderChat,
     gallery:      renderGallery,
+    coach:        renderCoach,
   };
   await renderers[name]?.();
   if (name === 'chat') _clearChatBadge?.();
@@ -152,6 +154,13 @@ function openMoreMenu() {
         <polyline points="21 15 16 10 5 21"/>
       </svg>`,
     }] : []),
+    {
+      label: 'AI Coach', view: 'coach',
+      icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a4 4 0 0 1 4 4v1h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1v1a4 4 0 0 1-8 0v-1H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1V6a4 4 0 0 1 4-4z"/>
+        <line x1="9" y1="11" x2="9" y2="13"/><line x1="15" y1="11" x2="15" y2="13"/>
+      </svg>`,
+    },
     {
       label: 'Awards', view: 'achievements',
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
