@@ -180,17 +180,17 @@ async function coachLoadVideo(input) {
   if (!file) return;
   const video  = document.getElementById('coach-video');
   const canvas = document.getElementById('coach-canvas');
-  if (!video) return;
+  if (!video || !canvas) return;
 
   _coachLoopActive = false;
+  _coachPoseInst   = null;   // force re-init bound to current elements
   _resetPhase();
   const finalEl = document.getElementById('coach-final');
   if (finalEl) finalEl.style.display = 'none';
 
-  // Show status
   const lbl = document.getElementById('coach-upload-label');
-  if (lbl) lbl.textContent = 'Analysing…';
-  _updateScoreOverlay('…', 'Analysing video…');
+  if (lbl) lbl.textContent = 'Loading…';
+  _updateScoreOverlay('…', 'Loading video…');
 
   video.srcObject = null;
   video.src = URL.createObjectURL(file);
@@ -198,24 +198,33 @@ async function coachLoadVideo(input) {
   video.load();
   await new Promise(res => { video.onloadedmetadata = res; });
 
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+
   _initPose(video, canvas);
 
-  // Auto-record all frames while video plays
+  // Seek-based frame processing — reliable regardless of playback speed
+  const duration = video.duration;
+  const FPS      = 15;
+  const step     = 1 / FPS;
+  let   framesProcessed = 0;
+
   _coachPhase = 'recording';
-  _holdStartTime = Date.now();
-  _coachLoopActive = true;
+  _holdElapsed = duration;
 
-  video.play();
-  _runPoseLoop(video);
+  for (let t = 0; t < duration; t += step) {
+    video.currentTime = t;
+    await new Promise(res => { video.onseeked = res; });
+    try { await _coachPoseInst.send({ image: video }); } catch (_) {}
+    framesProcessed++;
+    const pct = Math.round((t / duration) * 100);
+    if (lbl) lbl.textContent = `Analysing… ${pct}%`;
+    _updateScoreOverlay(`${pct}%`, 'Analysing…');
+  }
 
-  // When video ends, auto-show score
-  video.onended = () => {
-    _coachLoopActive = false;
-    _holdElapsed = (Date.now() - _holdStartTime) / 1000;
-    _coachPhase = 'complete';
-    _showFinalScore();
-    if (lbl) lbl.textContent = 'Choose another video';
-  };
+  _coachPhase = 'complete';
+  _showFinalScore();
+  if (lbl) lbl.textContent = 'Choose another video';
 }
 
 // ── Start camera ───────────────────────────
