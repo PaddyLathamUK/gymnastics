@@ -5,7 +5,7 @@
    the user to refresh.
 ═══════════════════════════════════════════ */
 
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const CACHE_NAME    = `gymnastics-${CACHE_VERSION}`;
 
 // Core files to cache for offline use
