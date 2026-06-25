@@ -39,7 +39,7 @@ async function renderCoach() {
 
   const scroll  = el('div', 'scroll-area');
   const content = el('div', 'scroll-content');
-  scroll.style.overflow = 'hidden';
+  scroll.style.cssText = 'flex:1;overflow-y:auto;padding-bottom:80px;';
   scroll.appendChild(content);
   view.appendChild(scroll);
 
