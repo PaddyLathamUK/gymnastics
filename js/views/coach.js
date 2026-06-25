@@ -476,6 +476,35 @@ function _showFinalScore() {
 
   const scoreColor = finalScore >= 9 ? '#34C97F' : finalScore >= 7 ? '#F5A623' : '#FF4757';
 
+  // Average deductions per category across all scored frames
+  const dedMap = {};
+  for (const frame of _phaseAll) {
+    for (const d of frame.deductions) {
+      if (!dedMap[d.label]) dedMap[d.label] = { total: 0, count: 0, details: {} };
+      dedMap[d.label].total += d.amount;
+      dedMap[d.label].count++;
+      dedMap[d.label].details[d.detail] = (dedMap[d.label].details[d.detail] || 0) + 1;
+    }
+  }
+  const dedRows = Object.entries(dedMap)
+    .map(([label, v]) => ({
+      label,
+      avg: v.total / v.count,
+      topDetail: Object.entries(v.details).sort((a, b) => b[1] - a[1])[0][0],
+    }))
+    .sort((a, b) => b.avg - a.avg);
+
+  const dedHTML = dedRows.map(d => {
+    const cls  = d.avg === 0 ? 'ded-ok' : d.avg <= 0.15 ? 'ded-warn' : 'ded-bad';
+    const amt  = d.avg === 0 ? '✓' : `−${d.avg.toFixed(2)}`;
+    return `
+      <div class="coach-matrix-row ${cls}">
+        <div class="coach-matrix-label">${d.label}</div>
+        <div class="coach-matrix-detail">${d.topDetail}</div>
+        <div class="coach-matrix-amount">${amt}</div>
+      </div>`;
+  }).join('');
+
   const finalEl = document.getElementById('coach-final');
   if (!finalEl) return;
   finalEl.style.display = 'block';
@@ -499,12 +528,14 @@ function _showFinalScore() {
         <div class="coach-final-phase-weight">×25%</div>
       </div>
     </div>
-    <div class="coach-final-notes">
+    <div class="coach-final-notes" style="margin-bottom:12px;">
       <div class="coach-final-note ${holdDed === 0 ? 'note-ok' : ''}">
         Duration: ${_holdElapsed.toFixed(1)}s ${holdDed === 0 ? '✓' : `(−${holdDed.toFixed(2)})`}
       </div>
       ${walkSteps > 0 ? `<div class="coach-final-note">Hand walking: ${walkSteps} step${walkSteps > 1 ? 's' : ''} (−${walkDed.toFixed(2)})</div>` : ''}
     </div>
+    <div class="coach-matrix-title">Deduction Breakdown</div>
+    ${dedHTML}
   `;
 
   // Scroll to final score
