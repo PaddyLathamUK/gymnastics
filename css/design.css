@@ -1315,7 +1315,7 @@ body {
 .coach-cam-wrap {
   position: relative; margin: 10px 16px 0;
   border-radius: 16px; overflow: hidden;
-  background: #000; aspect-ratio: 16/9;
+  background: #000; aspect-ratio: 3/4;
   box-shadow: 0 4px 20px rgba(123,95,255,0.2);
 }
 .coach-cam-wrap video,
