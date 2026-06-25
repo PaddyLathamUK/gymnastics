@@ -12,11 +12,9 @@ let _coachFacing      = 'environment';
 let _coachMove        = 'handstand';
 let _mpLoaded         = false;
 
-// Phase: ready → entry → hold → exit → complete
+// Phase: ready → recording → complete
 let _coachPhase        = 'ready';
-let _phaseEntry        = [];
-let _phaseHold         = [];
-let _phaseExit         = [];
+let _phaseAll          = [];   // all frames during recording
 let _holdStartTime     = null;
 let _holdElapsed       = 0;
 let _holdSteps         = 0;
@@ -182,9 +180,7 @@ function _stopCoach() {
 // ── Reset phase state ──────────────────────
 function _resetPhase() {
   _coachPhase    = 'ready';
-  _phaseEntry    = [];
-  _phaseHold     = [];
-  _phaseExit     = [];
+  _phaseAll      = [];
   _holdStartTime = null;
   _holdElapsed   = 0;
   _holdSteps     = 0;
@@ -196,25 +192,19 @@ function _resetPhase() {
 // ── Phase button action ────────────────────
 function coachPhaseAction() {
   if (_coachPhase === 'ready') {
-    _coachPhase = 'entry';
-    _updatePhaseUI();
-  } else if (_coachPhase === 'entry') {
-    _coachPhase = 'hold';
+    _coachPhase = 'recording';
     _startHoldTimer();
     _updatePhaseUI();
-  } else if (_coachPhase === 'hold') {
-    _coachPhase = 'exit';
+  } else if (_coachPhase === 'recording') {
     _stopHoldTimer();
-    _updatePhaseUI();
-  } else if (_coachPhase === 'exit') {
     _coachPhase = 'complete';
     _showFinalScore();
     _updatePhaseUI();
   } else if (_coachPhase === 'complete') {
     _resetPhase();
-    _updatePhaseUI();
     const finalEl = document.getElementById('coach-final');
     if (finalEl) finalEl.style.display = 'none';
+    _updatePhaseUI();
   }
 }
 
@@ -224,16 +214,14 @@ function _updatePhaseUI() {
   const timer = document.getElementById('coach-hold-timer');
 
   const cfg = {
-    ready:    { label: '▶  Start Attempt',     badgeText: '',      cls: '' },
-    entry:    { label: '✓  Reached Handstand', badgeText: 'ENTRY', cls: 'entry' },
-    hold:     { label: '↓  Coming Down',       badgeText: 'HOLD',  cls: 'hold' },
-    exit:     { label: '■  Finish',            badgeText: 'EXIT',  cls: 'entry' },
-    complete: { label: '↺  Try Again',         badgeText: 'DONE',  cls: '' },
+    ready:     { label: '▶  Start Attempt', badgeText: '',          cls: '' },
+    recording: { label: '■  Stop',          badgeText: 'Recording', cls: 'hold' },
+    complete:  { label: '↺  Try Again',     badgeText: 'Done',      cls: '' },
   }[_coachPhase];
 
   if (btn)   { btn.textContent = cfg.label; btn.className = `coach-phase-btn ${cfg.cls}`; }
   if (badge) { badge.textContent = cfg.badgeText; badge.style.display = cfg.badgeText ? 'block' : 'none'; }
-  if (timer) { timer.style.display = _coachPhase === 'hold' ? 'block' : 'none'; }
+  if (timer) { timer.style.display = _coachPhase === 'recording' ? 'block' : 'none'; }
 }
 
 function _startHoldTimer() {
@@ -274,14 +262,13 @@ function _coachOnResults(results, video, canvas) {
 
   const scored = _scoreHandstand(lm);
 
-  // Accumulate samples per phase
-  if (scored.inverted) {
-    if (_coachPhase === 'entry') _phaseEntry.push(scored);
-    if (_coachPhase === 'hold')  { _phaseHold.push(scored); _detectHandWalk(lm); }
-    if (_coachPhase === 'exit')  _phaseExit.push(scored);
+  // Accumulate samples while recording
+  if (_coachPhase === 'recording') {
+    _phaseAll.push(scored);
+    if (scored.inverted) _detectHandWalk(lm);
   }
 
-  const phaseLabel = { ready: 'Live', entry: 'Recording entry…', hold: 'Hold!', exit: 'Recording exit…', complete: 'Done' }[_coachPhase];
+  const phaseLabel = { ready: 'Get into position', recording: 'Recording…', complete: 'Done' }[_coachPhase];
 
   if (!scored.inverted) {
     _updateScoreOverlay('–', _coachPhase === 'ready' ? 'Get inverted…' : 'Not inverted');
@@ -338,13 +325,22 @@ function _updateMatrix(deductions, inverted) {
 
 // ── Final score ────────────────────────────
 function _showFinalScore() {
-  const entryScore = _avgPhaseScore(_phaseEntry);
-  const holdRaw    = _avgPhaseScore(_phaseHold);
+  // Auto-split frames: first 25% = entry, middle 50% = hold, last 25% = exit
+  const n = _phaseAll.length;
+  const e1 = Math.floor(n * 0.25);
+  const e2 = Math.floor(n * 0.75);
+  const entryFrames = _phaseAll.slice(0, e1);
+  const holdFrames  = _phaseAll.slice(e1, e2);
+  const exitFrames  = _phaseAll.slice(e2);
+
+  const entryScore = _avgPhaseScore(entryFrames);
+  const holdRaw    = _avgPhaseScore(holdFrames);
+  const exitScore  = _avgPhaseScore(exitFrames);
 
   // Hold duration deduction
   const holdDed = _holdElapsed < 1 ? 0.30 : _holdElapsed < 2 ? 0.10 : 0;
 
-  // Hand walking deduction (−0.10 per ~3 frame-steps detected)
+  // Hand walking deduction
   const walkSteps = Math.floor(_holdSteps / 3);
   const walkDed   = Math.min(1.0, walkSteps * 0.10);
 
@@ -352,10 +348,9 @@ function _showFinalScore() {
   const finalScore   = parseFloat((
     (entryScore ?? 10.0) * 0.25 +
     adjustedHold         * 0.50 +
-    (_avgPhaseScore(_phaseExit) ?? 10.0) * 0.25
+    (exitScore   ?? 10.0) * 0.25
   ).toFixed(2));
 
-  const exitScore = _avgPhaseScore(_phaseExit);
   const scoreColor = finalScore >= 9 ? '#34C97F' : finalScore >= 7 ? '#F5A623' : '#FF4757';
 
   const finalEl = document.getElementById('coach-final');
@@ -383,11 +378,14 @@ function _showFinalScore() {
     </div>
     <div class="coach-final-notes">
       <div class="coach-final-note ${holdDed === 0 ? 'note-ok' : ''}">
-        Hold: ${_holdElapsed.toFixed(1)}s ${holdDed === 0 ? '✓' : `(−${holdDed.toFixed(2)})`}
+        Duration: ${_holdElapsed.toFixed(1)}s ${holdDed === 0 ? '✓' : `(−${holdDed.toFixed(2)})`}
       </div>
       ${walkSteps > 0 ? `<div class="coach-final-note">Hand walking: ${walkSteps} step${walkSteps > 1 ? 's' : ''} (−${walkDed.toFixed(2)})</div>` : ''}
     </div>
   `;
+
+  // Scroll to final score
+  setTimeout(() => finalEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
 }
 
 function _avgPhaseScore(samples) {
