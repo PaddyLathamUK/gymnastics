@@ -10,6 +10,7 @@ let _coachPoseInst    = null;
 let _coachLoopActive  = false;
 let _coachFacing      = 'environment';
 let _coachMove        = 'handstand';
+let _coachMode        = 'camera';   // 'camera' | 'upload'
 let _mpLoaded         = false;
 
 // Phase: ready → recording → complete
@@ -41,6 +42,14 @@ async function renderCoach() {
   scroll.appendChild(content);
   view.appendChild(scroll);
 
+  // Mode toggle
+  const modeWrap = el('div', 'coach-mode-toggle');
+  modeWrap.innerHTML = `
+    <button id="coach-mode-camera" class="coach-mode-btn ${_coachMode === 'camera' ? 'active' : ''}" onclick="coachSetMode('camera')">Live Camera</button>
+    <button id="coach-mode-upload" class="coach-mode-btn ${_coachMode === 'upload' ? 'active' : ''}" onclick="coachSetMode('upload')">Upload Video</button>
+  `;
+  content.appendChild(modeWrap);
+
   // Move selector
   const selWrap = el('div', 'coach-selector');
   selWrap.innerHTML = `
@@ -51,7 +60,23 @@ async function renderCoach() {
   selWrap.querySelector('select').onchange = e => { _coachMove = e.target.value; };
   content.appendChild(selWrap);
 
-  // Camera — landscape 16:9
+  // Upload picker (hidden in camera mode)
+  const uploadWrap = el('div', 'coach-upload-wrap');
+  uploadWrap.id = 'coach-upload-wrap';
+  uploadWrap.style.display = _coachMode === 'upload' ? 'block' : 'none';
+  uploadWrap.innerHTML = `
+    <label class="coach-upload-btn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+      </svg>
+      Choose video from camera roll
+      <input type="file" accept="video/*" style="display:none" onchange="coachLoadVideo(this)">
+    </label>
+  `;
+  content.appendChild(uploadWrap);
+
+  // Camera wrap
   const camWrap = el('div', 'coach-cam-wrap');
   camWrap.innerHTML = `
     <video id="coach-video" autoplay playsinline muted></video>
@@ -60,7 +85,7 @@ async function renderCoach() {
       <div id="coach-score-num">10.0</div>
       <div id="coach-score-lbl">Get into position</div>
     </div>
-    <button class="coach-flip-btn" onclick="coachFlip()" title="Flip camera">
+    <button class="coach-flip-btn" id="coach-flip-btn" onclick="coachFlip()" title="Flip camera" style="${_coachMode === 'upload' ? 'display:none' : ''}">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M1 4v6h6"/><path d="M23 20v-6h-6"/>
         <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10"/>
@@ -118,8 +143,61 @@ async function _coachLoadMP() {
   _mpLoaded = true;
 }
 
+// ── Mode switch ────────────────────────────
+async function coachSetMode(mode) {
+  if (_coachMode === mode) return;
+  _coachMode = mode;
+  _coachLoopActive = false;
+  if (_coachStream) { _coachStream.getTracks().forEach(t => t.stop()); _coachStream = null; }
+  _resetPhase();
+
+  const uploadWrap = document.getElementById('coach-upload-wrap');
+  const flipBtn    = document.getElementById('coach-flip-btn');
+  const video      = document.getElementById('coach-video');
+  document.querySelectorAll('.coach-mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`coach-mode-${mode}`).classList.add('active');
+  if (uploadWrap) uploadWrap.style.display = mode === 'upload' ? 'block' : 'none';
+  if (flipBtn)    flipBtn.style.display    = mode === 'upload' ? 'none'  : '';
+
+  _updatePhaseUI();
+  const finalEl = document.getElementById('coach-final');
+  if (finalEl) finalEl.style.display = 'none';
+
+  if (mode === 'camera') {
+    if (video) { video.removeAttribute('controls'); video.muted = true; }
+    await _coachStart();
+  } else {
+    if (video) { video.srcObject = null; video.src = ''; video.setAttribute('controls', ''); video.muted = false; }
+    _coachLoopActive = true;
+    _runPoseLoop(video);
+  }
+}
+
+// ── Load video from camera roll ─────────────
+async function coachLoadVideo(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const video = document.getElementById('coach-video');
+  if (!video) return;
+  _resetPhase();
+  const finalEl = document.getElementById('coach-final');
+  if (finalEl) finalEl.style.display = 'none';
+  _updatePhaseUI();
+
+  video.srcObject = null;
+  video.src = URL.createObjectURL(file);
+  video.load();
+  await new Promise(res => { video.onloadedmetadata = res; });
+
+  const canvas = document.getElementById('coach-canvas');
+  _initPose(video, canvas);
+  _coachLoopActive = true;
+  _runPoseLoop(video);
+}
+
 // ── Start camera ───────────────────────────
 async function _coachStart() {
+  if (_coachMode === 'upload') return;
   const video  = document.getElementById('coach-video');
   const canvas = document.getElementById('coach-canvas');
   if (!video || !canvas) return;
@@ -134,26 +212,37 @@ async function _coachStart() {
   await new Promise(res => { video.onloadedmetadata = res; });
   video.play();
 
-  if (!_coachPoseInst) {
-    _coachPoseInst = new Pose({
-      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
-    });
-    _coachPoseInst.setOptions({
-      modelComplexity:        1,
-      smoothLandmarks:        true,
-      enableSegmentation:     false,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence:  0.5,
-    });
-    _coachPoseInst.onResults(res => _coachOnResults(res, video, canvas));
-  }
-
+  _initPose(video, canvas);
   _coachLoopActive = true;
   _runPoseLoop(video);
 }
 
+function _initPose(video, canvas) {
+  if (_coachPoseInst) return;
+  _coachPoseInst = new Pose({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`,
+  });
+  _coachPoseInst.setOptions({
+    modelComplexity:        1,
+    smoothLandmarks:        true,
+    enableSegmentation:     false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence:  0.5,
+  });
+  _coachPoseInst.onResults(res => _coachOnResults(res, video, canvas));
+}
+
 async function _runPoseLoop(video) {
   if (!_coachLoopActive || !document.getElementById('coach-video')) return;
+  if (!_coachPoseInst) {
+    if (_coachLoopActive) requestAnimationFrame(() => _runPoseLoop(video));
+    return;
+  }
+  // In upload mode only process while video is playing
+  if (_coachMode === 'upload' && (video.paused || video.ended)) {
+    if (_coachLoopActive) requestAnimationFrame(() => _runPoseLoop(video));
+    return;
+  }
   try { await _coachPoseInst.send({ image: video }); } catch(_) {}
   if (_coachLoopActive) requestAnimationFrame(() => _runPoseLoop(video));
 }

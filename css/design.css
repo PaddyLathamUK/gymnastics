@@ -1311,6 +1311,22 @@ body {
 .admin-toggle-sub { font-size: 12px; color: var(--text-soft); margin-top: 2px; }
 
 /* ── AI Coach ── */
+.coach-mode-toggle {
+  display: flex; gap: 8px; padding: 12px 16px 0;
+}
+.coach-mode-btn {
+  flex: 1; padding: 10px 0; border-radius: 12px; border: none; cursor: pointer;
+  font-size: 13px; font-weight: 700; background: var(--purple-bg); color: var(--text-soft);
+  transition: background 0.15s, color 0.15s;
+}
+.coach-mode-btn.active { background: var(--purple); color: #fff; }
+.coach-upload-wrap { padding: 10px 16px 0; }
+.coach-upload-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 14px; border-radius: 14px; border: 2px dashed var(--purple-lt);
+  background: var(--purple-bg); color: var(--purple); font-size: 14px; font-weight: 700;
+  cursor: pointer; box-sizing: border-box;
+}
 .coach-selector { padding: 8px 16px 0; }
 .coach-cam-wrap {
   position: relative; margin: 10px 16px 0;
